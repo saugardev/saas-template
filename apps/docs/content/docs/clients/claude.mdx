@@ -1,0 +1,12 @@
+---
+title: Claude
+description: Connect Claude or another dynamic OAuth client to the MCP endpoint.
+---
+
+Expose the API and MCP services over HTTPS, then add the exact `MCP_RESOURCE` URL to Claude as a custom remote MCP server. The first unauthorized request advertises protected-resource metadata; the client discovers the authorization server and starts Authorization Code with S256 PKCE.
+
+The starter advertises CIMD and supports public dynamic client registration at `/oauth/register`. Claude Code&apos;s metadata URL on `claude.ai` is allowlisted by default, and its portless loopback callback is matched to the ephemeral local callback port as required for native clients. It intentionally supports `token_endpoint_auth_method=none`; client secrets do not improve security for software that cannot keep one.
+
+After the user approves a project and `project:read`, Claude exchanges the code for an audience-bound access token and optional rotating refresh token.
+
+Client product UIs and availability change over time, so use the vendor&apos;s current instructions for where to add a custom connector. The server-side protocol configuration remains the same.

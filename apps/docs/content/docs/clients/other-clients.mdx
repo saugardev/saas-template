@@ -1,0 +1,17 @@
+---
+title: Other clients
+description: Requirements for any standards-compatible agent client.
+---
+
+A compatible client must support:
+
+- MCP Streamable HTTP
+- OAuth protected-resource and authorization-server discovery
+- Authorization Code with S256 PKCE
+- RFC 8707 `resource`
+- Public client authentication (`none`)
+- Dynamic client registration or an allowlisted HTTPS client ID metadata document
+
+Request `project:read`; add `openid profile email` if the client needs an ID token/UserInfo, and `offline_access` if it needs a rotating refresh token.
+
+The authorization response includes `iss`. Clients should compare it with the discovered issuer before exchanging the code.

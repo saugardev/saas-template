@@ -1,0 +1,45 @@
+---
+title: Endpoint reference
+description: The stable HTTP surface included in the starter.
+---
+
+## Health
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/healthz` | Process liveness |
+| `GET` | `/readyz` | API database readiness |
+
+## Application API
+
+| Method | Path |
+| --- | --- |
+| `POST` | `/api/v1/auth/register` |
+| `POST` | `/api/v1/auth/login` |
+| `POST` | `/api/v1/auth/logout` |
+| `GET` | `/api/v1/me` |
+| `GET` | `/api/v1/auth/providers` |
+| `POST` | `/api/v1/auth/verification/request` |
+| `POST` | `/api/v1/auth/verification/confirm` |
+| `POST` | `/api/v1/auth/password/forgot` |
+| `POST` | `/api/v1/auth/password/reset` |
+| `GET` | `/api/v1/workspaces` |
+| `POST` | `/api/v1/workspaces` |
+| `POST` | `/api/v1/projects` |
+| `POST` | `/api/v1/session/selection` |
+| `GET` | `/api/v1/project-context` |
+| `GET, POST` | `/api/v1/projects/{project_id}/api-keys` |
+| `DELETE` | `/api/v1/api-keys/{api_key_id}` |
+
+All errors use `{ "error": { "code", "message", "request_id" } }`. Never expose raw database or provider errors to clients.
+
+The project-context endpoint accepts either the application&apos;s `Session` scheme or a project key:
+
+```bash
+curl http://localhost:4000/api/v1/project-context \
+  -H "Authorization: ApiKey sk_..."
+```
+
+## OAuth and MCP
+
+See [Authentication](/docs/guides/authentication) for the authorization-server endpoints and [MCP server](/docs/guides/mcp) for protected-resource discovery.

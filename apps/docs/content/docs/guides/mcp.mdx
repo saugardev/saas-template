@@ -1,0 +1,21 @@
+---
+title: MCP server
+description: Protected-resource discovery, OAuth challenges, and tool authorization.
+---
+
+The endpoint is `MCP_PUBLIC_URL/mcp` and uses MCP Streamable HTTP. It targets the stable `2025-11-25` revision and negotiates the compatible 2025 revisions used by existing clients. Its protected-resource metadata is available at both:
+
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/oauth-protected-resource/mcp`
+
+The metadata points clients to `AUTH_ISSUER`. Unauthenticated MCP requests return a `WWW-Authenticate` challenge containing `resource_metadata`. Access tokens must have the MCP URL as their audience and include `project:read`.
+
+## Example tool
+
+`get_project_context` is intentionally read-only. It returns the user, workspace, project, role, client ID, and scopes authorized for the connection. Replace or extend it in `services/mcp/src/main.rs`.
+
+Its OAuth scheme appears in both the top-level `securitySchemes` field and `_meta.securitySchemes` for client compatibility. Tool-level authentication errors also include `_meta["mcp/www_authenticate"]`.
+
+## Concurrency model
+
+The server runs on Tokio because remote Streamable HTTP is a many-client service with network I/O and cancellation. Tool discovery is static and cheap; tool execution is isolated behind the handler and the process uses a cancellation token for graceful shutdown.

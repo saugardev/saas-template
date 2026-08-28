@@ -1,0 +1,45 @@
+---
+title: Authentication
+description: First-party sessions, social OIDC, and the agent-facing authorization server.
+---
+
+## Browser sessions
+
+Registration creates a user, workspace, default project, and opaque application session in one transaction. Next.js stores only the session token in an HttpOnly, `SameSite=Lax` cookie and forwards it to the API as a `Session` authorization header.
+
+Passwords use Argon2id. Verification and reset tokens are random, hashed at rest, expiring, and single-use. A successful password reset revokes existing sessions and OAuth refresh grants.
+
+## Social OpenID Connect
+
+Configure any conforming provider in `OIDC_PROVIDERS_JSON`:
+
+```json
+{
+  "google": {
+    "issuer": "https://accounts.google.com",
+    "client_id": "your-client-id",
+    "client_secret": "your-client-secret",
+    "scopes": ["openid", "profile", "email"]
+  }
+}
+```
+
+The callback uses state, nonce, and S256 PKCE. Account linking requires a verified email from the provider. The API then creates a short-lived, single-use handoff which the Next.js callback exchanges for the application cookie.
+
+Register this callback with the provider, replacing the slug and public API origin as needed:
+
+```text
+https://api.example.com/api/v1/auth/oidc/google/callback
+```
+
+## Agent authorization
+
+The API is also an OAuth 2.1/OpenID Connect authorization server for public clients. It exposes:
+
+- `/.well-known/oauth-authorization-server`
+- `/.well-known/openid-configuration`
+- `/.well-known/jwks.json`
+- `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, `/oauth/userinfo`
+- `/oauth/register` when dynamic registration is enabled
+
+Authorization codes require S256 PKCE and exact redirect matching. Native loopback callbacks follow RFC 8252 and may vary only their port, which keeps Claude Code&apos;s ephemeral callback compatible. Access tokens are RS256 JWTs bound to `MCP_RESOURCE`. Refresh tokens rotate; replay revokes the token family and grant.

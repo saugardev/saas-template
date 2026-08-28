@@ -1,0 +1,25 @@
+{
+  "name": "agent-saas-starter",
+  "private": true,
+  "packageManager": "bun@1.3.12",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel dev:api dev:mcp dev:app dev:docs dev:landing",
+    "dev:api": "cargo run -p starter-api",
+    "dev:mcp": "cargo run -p starter-mcp-server",
+    "dev:app": "bun --env-file=../../.env --cwd apps/app dev",
+    "dev:docs": "bun --env-file=../../.env --cwd apps/docs dev --port 3003",
+    "dev:landing": "bun --env-file=../../.env --cwd apps/landing dev --port 3002",
+    "build": "bun run build:app && bun run build:docs && bun run build:landing",
+    "build:app": "bun --env-file=../../.env --cwd apps/app build",
+    "build:docs": "bun --env-file=../../.env --cwd apps/docs build",
+    "build:landing": "bun --env-file=../../.env --cwd apps/landing build",
+    "lint": "bun --cwd apps/app lint && bun --cwd apps/docs lint && bun --cwd apps/landing lint",
+    "types:check": "bun --cwd apps/app types:check && bun --cwd apps/docs types:check && bun --cwd apps/landing types:check",
+    "check:rust": "cargo fmt --check && cargo check --workspace --all-targets && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "check": "bun run lint && bun run types:check && bun run build && bun run check:rust",
+    "keys:dev": "./scripts/generate-dev-key.sh"
+  }
+}

@@ -1,0 +1,35 @@
+---
+title: Configuration
+description: Environment variables and safe production defaults.
+---
+
+Copy `.env.example` to `.env`. The main settings are:
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_URL` | Browser application origin |
+| `DOCS_URL` | Documentation origin |
+| `API_PUBLIC_URL` | Public API origin and upstream OIDC callback base |
+| `AUTH_ISSUER` | Exact OAuth/OIDC issuer |
+| `MCP_PUBLIC_URL` | MCP service origin |
+| `MCP_RESOURCE` | Exact protected MCP URL, including `/mcp` |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `AUTH_PRIVATE_KEY_PATH` / `AUTH_PUBLIC_KEY_PATH` | RS256 keypair |
+| `OIDC_PROVIDERS_JSON` | Upstream social OIDC providers keyed by route slug |
+| `CIMD_ALLOWED_ORIGINS` | Comma-separated HTTPS origins allowed for metadata fetches; defaults cover ChatGPT and Claude |
+| `DCR_ENABLED` | Enables public dynamic client registration |
+| `EMAIL_DRIVER` | `log` for development or `smtp` with `SMTP_URL` |
+| `NEXT_PUBLIC_GITHUB_URL` | Optional repository URL used by documentation source links |
+
+Each upstream entry in `OIDC_PROVIDERS_JSON` must request `openid` and `email`; the issuer must return a verified email before the starter links or creates an account.
+
+## Production checklist
+
+- Set `APP_ENV=production`; HTTP issuer/resource URLs and `EMAIL_DRIVER=log` are rejected.
+- Generate and protect a production signing key outside the repository.
+- Serve the app, API, and MCP behind HTTPS with stable public origins.
+- Set one stable, base64-encoded `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` across all app instances.
+- Rate-limit password, recovery, and dynamic-registration endpoints at your trusted edge; deployment infrastructure is intentionally out of scope for this starter.
+- Limit `CIMD_ALLOWED_ORIGINS` to clients you intend to support.
+- Use a dedicated PostgreSQL role and encrypted backups.
+- Set `NEXT_PUBLIC_GITHUB_URL` if you want source links in the documentation.

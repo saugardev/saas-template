@@ -1,0 +1,14 @@
+---
+title: ChatGPT
+description: Connect the protected MCP endpoint as a ChatGPT app.
+---
+
+1. Deploy the API and MCP services on public HTTPS origins.
+2. Set `AUTH_ISSUER`, `MCP_PUBLIC_URL`, and `MCP_RESOURCE` to their exact public URLs.
+3. Keep `https://chatgpt.com` in `CIMD_ALLOWED_ORIGINS`.
+4. Add the MCP URL ending in `/mcp` when creating the app/connector in ChatGPT.
+5. Complete sign-in and select the project on the consent screen.
+
+ChatGPT can identify itself with a client ID metadata document URL. The API fetches that JSON only from allowlisted HTTPS origins, rejects redirects, blocks private/reserved DNS targets, limits the response size, and validates redirect URIs and public-client authentication before caching it.
+
+For clients that use dynamic registration instead, leave `DCR_ENABLED=true`.

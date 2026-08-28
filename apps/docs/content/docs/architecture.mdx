@@ -1,0 +1,31 @@
+---
+title: Architecture
+description: Process boundaries, data ownership, and the authorization path.
+---
+
+```mermaid
+flowchart LR
+  Browser -->|HttpOnly session cookie| Web[Next.js app / BFF]
+  Web -->|Session authorization header| API[Axum API]
+  Agent -->|OAuth discovery + consent| API
+  Agent -->|Audience-bound bearer token| MCP[rmcp resource server]
+  API --> DB[(PostgreSQL)]
+  MCP -->|Local RS256 verification| MCP
+```
+
+## Responsibilities
+
+| Component | Owns |
+| --- | --- |
+| `apps/app` | Forms, consent UI, and the opaque session cookie |
+| `services/api` | Users, sessions, tenancy, upstream OIDC, OAuth/OIDC issuance, and audit records |
+| `services/mcp` | MCP transport, resource discovery, bearer challenges, and tool authorization |
+| `crates/auth` | Password/token primitives, PKCE, JWT/JWK, and OAuth validation |
+| `crates/db` | PostgreSQL connection and embedded migrations |
+| `crates/mcp` | Reusable MCP authorization and security metadata helpers |
+
+The MCP service does not call the API on every request. It validates the JWT signature, issuer, audience, expiry, and scope locally. The access token carries the user, workspace, project, role, client, and scope chosen during consent.
+
+## Tenant invariant
+
+Every application session has one active workspace and project. Every OAuth grant is bound to one project and one RFC 8707 resource. A tool therefore receives an explicit project context instead of relying on ambient global state.

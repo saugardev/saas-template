@@ -1,0 +1,46 @@
+[workspace]
+members = [
+  "crates/auth",
+  "crates/db",
+  "crates/mcp",
+  "services/api",
+  "services/mcp",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+argon2 = { version = "0.6.0", features = ["password-hash"] }
+axum = { version = "0.8.9", features = ["form", "json", "macros", "query"] }
+base64 = "0.22.1"
+chrono = { version = "0.4.42", features = ["serde"] }
+dotenvy = "0.15.7"
+http = "1.4.0"
+jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "pool", "smtp-transport", "tokio1-rustls-tls"] }
+rand = "0.9.2"
+rand_core_06 = { package = "rand_core", version = "0.6.4", features = ["getrandom"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["form", "json", "rustls"] }
+rmcp = { version = "3.1.4", features = ["macros", "schemars", "server", "transport-streamable-http-server"] }
+rsa = { version = "0.9.9", features = ["pem", "sha2"] }
+schemars = "1.1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sha2 = "0.10.9"
+sqlx = { version = "0.9.0", default-features = false, features = ["chrono", "macros", "migrate", "postgres", "runtime-tokio", "uuid"] }
+subtle = "2.6.1"
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tokio-util = "0.7.18"
+tower = "0.5.2"
+tower-http = { version = "0.6.8", features = ["catch-panic", "cors", "limit", "request-id", "sensitive-headers", "set-header", "timeout", "trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+url = { version = "2.5.8", features = ["serde"] }
+uuid = { version = "1.21.0", features = ["serde", "v4"] }

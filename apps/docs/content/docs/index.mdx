@@ -1,0 +1,24 @@
+---
+title: Start here
+description: A minimal, brand-neutral base for a multi-tenant SaaS product with protected agent tools.
+---
+
+The starter is a single Bun and Cargo monorepo. Its Rust API owns identity and tenant data, the Next.js application acts as a browser-facing BFF, and the MCP service validates short-lived access tokens locally.
+
+<Cards>
+  <Card title="Run it locally" description="Database, keys, environment, and development commands." href="/docs/quickstart" />
+  <Card title="Understand the boundary" description="See which process owns each security decision." href="/docs/architecture" />
+  <Card title="Connect an agent" description="Discover, authorize, and call the MCP server." href="/docs/guides/mcp" />
+</Cards>
+
+## Included
+
+- Password registration, email verification and reset
+- Generic upstream OpenID Connect providers
+- Opaque application sessions in an HttpOnly cookie
+- Workspaces, projects, roles, and scoped API keys
+- OAuth Authorization Code with S256 PKCE, refresh rotation, DCR, and client ID metadata documents
+- OpenID Connect discovery, ID tokens, JWKS, and UserInfo
+- Protected-resource metadata and a Streamable HTTP MCP endpoint
+
+The starter deliberately leaves product behavior, billing, queues, deployment, and vendor branding to the consuming project.
