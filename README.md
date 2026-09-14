@@ -1,58 +1,36 @@
 # Agent SaaS Starter
 
-A small, brand-neutral monorepo for building a multi-tenant SaaS product with a protected MCP server. It includes first-party user auth, generic social OpenID Connect, and an OAuth 2.1/OIDC authorization server that works with ChatGPT, Claude, and standards-compatible agent clients.
+Build a SaaS app with authentication and OAuth-protected tools for ChatGPT and Claude.
 
-## What ships
+[Documentation](docs/README.md) · [Demo](docs/README.md#demo) · [Contributing](CONTRIBUTING.md)
 
-- Next.js application for sign-in, consent, workspaces, projects, and API keys
-- Axum API backed by PostgreSQL
-- OAuth Authorization Code + S256 PKCE, CIMD, DCR, refresh rotation, JWKS, and UserInfo
-- `rmcp` Streamable HTTP server with one API-backed random-number tool
-- Fumadocs documentation and a minimal landing site
+## Getting started
 
-There is no product-specific business logic, blockchain integration, billing, TEE, provenance, or deployment infrastructure.
+Install Rust 1.94+, Bun 1.3+, OpenSSL, and PostgreSQL, then create the database configured in `.env`:
 
-## Workspace
-
-| Path | Purpose |
-| --- | --- |
-| `apps/app` | Browser BFF, auth UI, consent, and tenant dashboard |
-| `apps/landing` | Minimal public landing page |
-| `apps/docs` | Fumadocs guides and endpoint reference |
-| `services/api` | Identity, tenancy, OAuth/OIDC, and PostgreSQL owner |
-| `services/mcp` | Protected remote Streamable HTTP MCP server |
-| `crates/auth`, `crates/db`, `crates/mcp` | Small reusable Rust boundaries |
-
-## Local setup
-
-1. Install Rust 1.94+, Bun 1.3+, OpenSSL, and PostgreSQL.
-2. Copy `.env.example` to `.env` and create the configured database.
-3. Run `bun install`.
-4. Run `bun run keys:dev`.
-5. Run `bun run dev`.
-
-The API applies SQL migrations at startup. Development email messages are written to structured logs. The default ports are app `3000`, landing `3002`, docs `3003`, API `4000`, and MCP `4001`.
-
-To connect an agent client, expose the API and MCP services over HTTPS, retain the relevant ChatGPT or Claude origin in `CIMD_ALLOWED_ORIGINS`, and add the exact `MCP_RESOURCE` URL in the client. The docs app contains client-specific walkthroughs.
-
-## Checks
-
-```bash
-bun run check
+```sh
+cp .env.example .env
+bun install --frozen-lockfile
+bun run keys:dev
+bun run dev
 ```
 
-Default Rust unit tests do not require PostgreSQL. Database integration tests run when `TEST_DATABASE_URL` is set.
+Open [localhost:3000](http://localhost:3000). See the [quickstart](docs/quickstart.mdx) for database setup, ports, and configuration.
 
-With the API and MCP running, exercise authentication and tool access against a disposable database:
+## Documentation
 
-```bash
-API_PUBLIC_URL=http://localhost:4000 MCP_RESOURCE=http://localhost:4001/mcp bun run test:auth
-```
+Read the [guides](docs/README.md) for authentication, tenant boundaries, MCP connections, and deployment on Jio.
 
-The check creates test accounts. Set `TEST_DATABASE_URL` to that deployment's database to also check verification, password reset, and browser-bound login handoffs.
+The example exposes one API-backed random-number tool. See [tested flows and current limitations](docs/guides/validation.mdx).
 
-Read the [Jio deployment guide](apps/docs/content/docs/guides/jio-deployment.mdx) and [validation results](apps/docs/content/docs/guides/validation.mdx), including live ChatGPT and Claude OAuth tests and remaining limitations.
+## Contributing
 
-## Security boundary
+Bug reports and pull requests are welcome. Read [Contributing](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-The Rust API owns identity and data. Next.js acts as a browser-facing BFF and stores only an opaque application session in an HttpOnly cookie. MCP access tokens are short-lived, audience-bound RS256 JWTs and are validated locally by the MCP resource server.
+## Security
+
+Report vulnerabilities privately using our [security policy](SECURITY.md).
+
+## License
+
+[MIT](LICENSE).

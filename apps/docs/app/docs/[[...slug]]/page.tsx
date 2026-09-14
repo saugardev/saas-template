@@ -31,7 +31,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
           markdownUrl={markdownUrl}
           githubUrl={
             gitConfig.repositoryUrl
-              ? `${gitConfig.repositoryUrl}/blob/${gitConfig.branch}/apps/docs/content/docs/${page.path}`
+              ? `${gitConfig.repositoryUrl}/blob/${gitConfig.branch}/docs/${page.path}`
               : undefined
           }
         />

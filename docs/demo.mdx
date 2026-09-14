@@ -1,0 +1,19 @@
+---
+title: Demo
+description: Watch ChatGPT and Claude call the API through OAuth-protected MCP on a Jio computer.
+---
+
+<video controls playsInline preload="metadata" aria-label="SaaS authentication and MCP walkthrough" style={{ width: '100%', borderRadius: '12px' }}>
+  <source src="/boilerplate.mp4" type="video/mp4" />
+  Your browser cannot play this video. <a href="/boilerplate.mp4">Download the MP4</a>.
+</video>
+
+The 39-second recording shows the app deployed on Jio, followed by real calls to `get_random_number` from ChatGPT and Claude. The tool fetches its result from the authenticated API.
+
+- The browser signs in to the deployed application.
+- ChatGPT calls the connected tool and returns `{"number":13}`.
+- Claude requests one-time approval, calls the tool, and returns `{"number":57}`.
+
+OAuth enrollment was completed before recording; this walkthrough uses those existing connections. See [ChatGPT setup](./clients/chatgpt.mdx), [Claude setup](./clients/claude.mdx), and the [validation results](./guides/validation.mdx) for the complete flow and test limits.
+
+This recording has no audio. The steps and results above provide its text equivalent.

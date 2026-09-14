@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "quickstart",
+    "demo",
     "architecture",
     "guides",
     "clients",
