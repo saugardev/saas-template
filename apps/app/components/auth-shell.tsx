@@ -10,39 +10,47 @@ export function AuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(28rem,0.8fr)]">
-      <section className="hidden border-r border-border bg-muted/50 p-10 lg:flex lg:flex-col lg:justify-between">
-        <Link
-          className="inline-flex min-h-10 items-center rounded-sm text-sm font-semibold tracking-tight focus-visible:ring-2 focus-visible:ring-ring"
-          href="/"
-        >
-          Agent SaaS Starter
-        </Link>
-        <div className="max-w-lg space-y-5">
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            Identity → consent → tools
-          </p>
-          <h2 className="text-4xl font-semibold tracking-tight">
-            A quiet foundation for software agents.
-          </h2>
-          <p className="max-w-md text-base leading-7 text-muted-foreground">
-            First-party auth, tenant boundaries, and standards-based MCP access
-            without product-specific baggage.
-          </p>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          OAuth 2.1 · OpenID Connect · MCP
-        </p>
-      </section>
-      <section className="flex items-center justify-center px-4 py-12 sm:px-8">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-            <p className="leading-6 text-muted-foreground">{description}</p>
+    <main className="min-h-screen bg-background p-2 sm:p-4">
+      <div className="mx-auto grid min-h-[calc(100svh-1rem)] max-w-[1260px] overflow-hidden rounded-[22px] border border-border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04),0_18px_50px_rgb(0_0_0/0.06)] sm:min-h-[calc(100svh-2rem)] sm:rounded-[28px] lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="hidden border-r border-border bg-subtle p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
+          <Link className="wordmark" href="/">
+            <span className="brand-mark" aria-hidden="true">✦</span>
+            <span>Agent SaaS</span>
+          </Link>
+          <div className="max-w-lg">
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              Identity → consent → tools
+            </p>
+            <h2 className="mt-5 text-[48px] font-semibold leading-[1.02] tracking-[-0.055em]">
+              A quiet foundation for software agents.
+            </h2>
+            <p className="mt-5 max-w-md text-[15px] leading-7 text-muted-foreground">
+              First-party auth, tenant boundaries, and standards-based MCP access without product-specific baggage.
+            </p>
+            <div className="mt-10 overflow-hidden rounded-2xl bg-[#202021] text-white shadow-[0_12px_30px_rgb(0_0_0/0.14)]">
+              <div className="auth-art" />
+              <div className="p-5">
+                <strong className="text-sm font-medium">One narrow grant.</strong>
+                <p className="mt-2 text-xs leading-5 text-[#adadaf]">User, workspace, project, role, and scope stay visible all the way to the tool.</p>
+              </div>
+            </div>
           </div>
-          {children}
-        </div>
-      </section>
+          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">OAuth 2.1 · OpenID Connect · MCP</p>
+        </section>
+        <section className="flex items-center justify-center px-5 py-12 sm:px-8">
+          <div className="w-full max-w-[380px]">
+            <Link className="wordmark mb-12 lg:hidden" href="/">
+              <span className="brand-mark" aria-hidden="true">✦</span>
+              <span>Agent SaaS</span>
+            </Link>
+            <div className="mb-8 space-y-2">
+              <h1 className="text-[32px] font-semibold tracking-[-0.045em]">{title}</h1>
+              <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+            </div>
+            {children}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

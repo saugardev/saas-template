@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useFormStatus } from "react-dom";
 
 export function ConfirmSubmitButton({
@@ -12,18 +13,23 @@ export function ConfirmSubmitButton({
   className?: string;
 }) {
   const { pending } = useFormStatus();
+  const [confirming, setConfirming] = useState(false);
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-busy={pending}
-      onClick={(event) => {
-        if (!window.confirm(confirmMessage)) event.preventDefault();
-      }}
-      className={className}
-    >
-      {pending ? "Revoking…" : children}
-    </button>
+    <span className="inline-flex items-center justify-end gap-1">
+      {confirming ? <span className="sr-only" role="status">{confirmMessage}</span> : null}
+      <button
+        type={confirming ? "submit" : "button"}
+        disabled={pending}
+        aria-busy={pending}
+        onClick={() => setConfirming(true)}
+        className={className}
+      >
+        {pending ? "Revoking…" : confirming ? "Confirm revoke" : children}
+      </button>
+      {confirming && !pending ? (
+        <button type="button" className="button-table" onClick={() => setConfirming(false)}>Cancel</button>
+      ) : null}
+    </span>
   );
 }
