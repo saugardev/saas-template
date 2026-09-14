@@ -16,7 +16,7 @@ use serde_json::json;
 use sqlx::Row;
 use starter_auth::{
     OidcDiscovery, OidcIdClaims, OidcTokenResponse, hash_password, hash_token, pkce_challenge,
-    random_token, verify_password,
+    random_token, verify_password, verify_pkce,
 };
 use url::Url;
 use uuid::Uuid;
@@ -359,8 +359,8 @@ async fn reset_password(
     .await
     .map_err(ApiError::internal)?
     .ok_or_else(|| ApiError::bad_request("invalid_token", "Reset link is invalid or expired"))?;
-    sqlx::query("UPDATE password_reset_tokens SET consumed_at=now() WHERE token_hash=$1")
-        .bind(&token_hash)
+    sqlx::query("UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL")
+        .bind(user_id)
         .execute(&mut *transaction)
         .await
         .map_err(ApiError::internal)?;
@@ -418,6 +418,7 @@ async fn send_verification(state: &AppState, user_id: Uuid, email: &str) -> ApiR
 #[derive(Debug, Deserialize)]
 struct OidcStartQuery {
     return_to: Option<String>,
+    browser_challenge: String,
 }
 
 async fn oidc_start(
@@ -431,6 +432,17 @@ async fn oidc_start(
         .get(&provider_slug)
         .cloned()
         .ok_or_else(|| ApiError::not_found("OIDC provider was not found"))?;
+    if query.browser_challenge.len() != 43
+        || !query
+            .browser_challenge
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    {
+        return Err(ApiError::bad_request(
+            "invalid_request",
+            "Start sign-in from the application",
+        ));
+    }
     let discovery = discover(&state, &provider.issuer).await?;
     if discovery.issuer.trim_end_matches('/') != provider.issuer.trim_end_matches('/') {
         return Err(ApiError::bad_request(
@@ -442,12 +454,13 @@ async fn oidc_start(
     let nonce = random_token(24);
     let verifier = random_token(48);
     let return_to = safe_return_to(query.return_to.as_deref());
-    sqlx::query("INSERT INTO oidc_login_requests (state_hash,provider,nonce,pkce_verifier,return_to,expires_at) VALUES ($1,$2,$3,$4,$5,now()+interval '10 minutes')")
+    sqlx::query("INSERT INTO oidc_login_requests (state_hash,provider,nonce,pkce_verifier,return_to,browser_challenge,expires_at) VALUES ($1,$2,$3,$4,$5,$6,now()+interval '10 minutes')")
         .bind(hash_token(&state_token))
         .bind(&provider_slug)
         .bind(&nonce)
         .bind(&verifier)
         .bind(&return_to)
+        .bind(&query.browser_challenge)
         .execute(&state.db)
         .await
         .map_err(ApiError::internal)?;
@@ -497,13 +510,18 @@ async fn oidc_callback(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| ApiError::bad_request("invalid_callback", "OIDC callback has no code"))?;
-    let row = sqlx::query("UPDATE oidc_login_requests SET consumed_at=now() WHERE state_hash=$1 AND provider=$2 AND consumed_at IS NULL AND expires_at > now() RETURNING nonce,pkce_verifier,return_to")
+    let row = sqlx::query("UPDATE oidc_login_requests SET consumed_at=now() WHERE state_hash=$1 AND provider=$2 AND consumed_at IS NULL AND expires_at > now() RETURNING nonce,pkce_verifier,return_to,browser_challenge")
         .bind(hash_token(&query.state))
         .bind(&provider_slug)
         .fetch_optional(&state.db)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::bad_request("invalid_state", "OIDC state is invalid or expired"))?;
+    let browser_challenge: String = row
+        .get::<Option<String>, _>("browser_challenge")
+        .ok_or_else(|| {
+            ApiError::bad_request("invalid_state", "Restart sign-in from the application")
+        })?;
     let nonce: String = row.get("nonce");
     let verifier: String = row.get("pkce_verifier");
     let return_to: String = row.get("return_to");
@@ -549,12 +567,13 @@ async fn oidc_callback(
     let handoff = random_token(32);
     let expires_at = Utc::now()
         + chrono::Duration::from_std(state.config.handoff_ttl).map_err(ApiError::internal)?;
-    sqlx::query("INSERT INTO session_handoffs (handoff_hash,user_id,workspace_id,project_id,expires_at) VALUES ($1,$2,$3,$4,$5)")
+    sqlx::query("INSERT INTO session_handoffs (handoff_hash,user_id,workspace_id,project_id,expires_at,browser_challenge) VALUES ($1,$2,$3,$4,$5,$6)")
         .bind(hash_token(&handoff))
         .bind(user_id)
         .bind(workspace_id)
         .bind(project_id)
         .bind(expires_at)
+        .bind(browser_challenge)
         .execute(&state.db)
         .await
         .map_err(ApiError::internal)?;
@@ -573,6 +592,7 @@ async fn oidc_callback(
 #[derive(Debug, Deserialize)]
 struct HandoffRequest {
     handoff_code: String,
+    browser_verifier: String,
 }
 
 async fn consume_handoff(
@@ -581,12 +601,20 @@ async fn consume_handoff(
 ) -> ApiResult<Json<AuthResponse>> {
     let handoff_hash = hash_token(request.handoff_code.trim());
     let mut transaction = state.db.begin().await.map_err(ApiError::internal)?;
-    let row = sqlx::query("SELECT h.user_id,h.workspace_id,h.project_id,u.email,u.name,u.email_verified_at FROM session_handoffs h JOIN users u ON u.user_id=h.user_id WHERE h.handoff_hash=$1 AND h.consumed_at IS NULL AND h.expires_at > now() FOR UPDATE")
+    let row = sqlx::query("SELECT h.user_id,h.workspace_id,h.project_id,h.browser_challenge,u.email,u.name,u.email_verified_at FROM session_handoffs h JOIN users u ON u.user_id=h.user_id WHERE h.handoff_hash=$1 AND h.consumed_at IS NULL AND h.expires_at > now() FOR UPDATE")
         .bind(&handoff_hash)
         .fetch_optional(&mut *transaction)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::bad_request("invalid_handoff", "Session handoff is invalid or expired"))?;
+    let challenge = row
+        .get::<Option<String>, _>("browser_challenge")
+        .ok_or_else(|| ApiError::unauthorized("Restart sign-in from the application"))?;
+    if !verify_pkce(&request.browser_verifier, &challenge) {
+        return Err(ApiError::unauthorized(
+            "Sign-in must finish in the browser that started it",
+        ));
+    }
     let user_id: Uuid = row.get("user_id");
     let workspace_id: Uuid = row.get("workspace_id");
     let project_id: Uuid = row.get("project_id");
@@ -741,12 +769,24 @@ async fn upsert_oidc_user(
         return Ok((row.get("user_id"), row.get("workspace_id"), row.get("project_id")));
     }
     let mut transaction = state.db.begin().await.map_err(ApiError::internal)?;
-    let existing = sqlx::query("SELECT user_id FROM users WHERE lower(email)=lower($1) FOR UPDATE")
-        .bind(&claims.email)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
+    let existing = sqlx::query(
+        "SELECT user_id,email_verified_at FROM users WHERE lower(email)=lower($1) FOR UPDATE",
+    )
+    .bind(&claims.email)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(ApiError::internal)?;
     let (user_id, workspace_id, project_id) = if let Some(row) = existing {
+        // Never attach an external identity to an unverified password account:
+        // an attacker may have registered that email before its real owner.
+        if row
+            .get::<Option<DateTime<Utc>>, _>("email_verified_at")
+            .is_none()
+        {
+            return Err(ApiError::forbidden(
+                "Verify the existing account before linking this identity",
+            ));
+        }
         let user_id: Uuid = row.get("user_id");
         let membership = sqlx::query("SELECT m.workspace_id,p.project_id FROM memberships m JOIN projects p ON p.workspace_id=m.workspace_id WHERE m.user_id=$1 ORDER BY m.created_at,p.created_at LIMIT 1")
             .bind(user_id)
@@ -850,7 +890,13 @@ fn validate_password(value: &str) -> ApiResult<()> {
 
 fn safe_return_to(value: Option<&str>) -> String {
     value
-        .filter(|value| value.starts_with('/') && !value.starts_with("//"))
+        .filter(|value| {
+            value.starts_with('/')
+                && !value.starts_with("//")
+                && !value
+                    .chars()
+                    .any(|c| c == '\\' || c.is_ascii_control() || c == ' ')
+        })
         .unwrap_or("/dashboard")
         .to_string()
 }
@@ -866,4 +912,26 @@ async fn verify_user_password(password: String, hash: String) -> ApiResult<bool>
     tokio::task::spawn_blocking(move || verify_password(&password, &hash))
         .await
         .map_err(ApiError::internal)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn return_paths_reject_browser_origin_escapes() {
+        for target in [
+            "//evil.example",
+            "/\\evil.example",
+            "/\n/evil.example",
+            "/\t/evil.example",
+            "https://evil.example",
+        ] {
+            assert_eq!(safe_return_to(Some(target)), "/dashboard");
+        }
+        assert_eq!(
+            safe_return_to(Some("/oauth/consent?request_id=1")),
+            "/oauth/consent?request_id=1"
+        );
+    }
 }

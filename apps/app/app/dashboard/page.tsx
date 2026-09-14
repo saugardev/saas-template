@@ -106,7 +106,7 @@ export default async function DashboardPage() {
           <div className="mb-8 rounded-lg border border-border bg-muted p-4 text-sm">
             <p>
               Verify <strong>{me.email}</strong> to finish securing your account.
-              Check the development API log for the verification link.
+              Check your inbox for the verification link.
             </p>
             <div className="mt-3 max-w-xs">
               <SimpleForm
