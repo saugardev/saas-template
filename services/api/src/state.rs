@@ -1,4 +1,4 @@
-use crate::{config::Config, email::EmailSender, error::ApiError};
+use crate::{config::Config, error::ApiError};
 use axum::http::{HeaderMap, header};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -14,7 +14,6 @@ pub struct AppState {
     pub db: Database,
     pub jwt: JwtIssuer,
     pub http: reqwest::Client,
-    pub email: EmailSender,
 }
 
 #[derive(Debug, Clone, Serialize)]

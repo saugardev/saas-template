@@ -43,6 +43,17 @@ async fn run_integration_checks(pool: &PgPool) -> anyhow::Result<()> {
         .await?;
     assert_eq!(users_table.as_deref(), Some("users"));
 
+    for table in ["email_verification_tokens", "password_reset_tokens"] {
+        let present = sqlx::query_scalar::<_, Option<String>>("SELECT to_regclass($1)::text")
+            .bind(table)
+            .fetch_one(pool)
+            .await?;
+        assert!(
+            present.is_none(),
+            "removed mail table still exists: {table}"
+        );
+    }
+
     let user_id = Uuid::new_v4();
     let workspace_id = Uuid::new_v4();
     let project_id = Uuid::new_v4();

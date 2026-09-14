@@ -1,5 +1,4 @@
 mod config;
-mod email;
 mod error;
 mod routes;
 mod state;
@@ -14,7 +13,6 @@ use axum::{
     routing::get,
 };
 use config::Config;
-use email::EmailSender;
 use reqwest::redirect::Policy;
 use serde_json::json;
 use starter_auth::JwtIssuer;
@@ -31,7 +29,6 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     init_tracing();
     let config = Arc::new(Config::from_env()?);
-    let email = EmailSender::from_config(&config)?;
     let private_pem = fs::read(&config.private_key_path).with_context(|| {
         format!(
             "read private key at {}; run `bun run keys:dev` for local development",
@@ -58,7 +55,6 @@ async fn main() -> anyhow::Result<()> {
         db,
         jwt,
         http,
-        email,
     };
 
     let app_origin = HeaderValue::from_str(config.app_url.origin().ascii_serialization().as_str())?;

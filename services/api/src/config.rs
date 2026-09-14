@@ -24,9 +24,6 @@ pub struct Config {
     pub auth_code_ttl: Duration,
     pub auth_request_ttl: Duration,
     pub handoff_ttl: Duration,
-    pub email_driver: String,
-    pub email_from: String,
-    pub smtp_url: Option<String>,
     pub oidc_providers: OidcProviders,
     pub dcr_enabled: bool,
     pub cimd_allowed_origins: Vec<String>,
@@ -35,19 +32,6 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let app_env = value("APP_ENV", "development");
-        let email_driver = value("EMAIL_DRIVER", "log");
-        if !matches!(email_driver.as_str(), "log" | "smtp") {
-            bail!("EMAIL_DRIVER must be log or smtp");
-        }
-        if app_env == "production" && email_driver == "log" {
-            bail!("EMAIL_DRIVER=log is forbidden in production");
-        }
-        let smtp_url = env::var("SMTP_URL")
-            .ok()
-            .filter(|value| !value.trim().is_empty());
-        if email_driver == "smtp" && smtp_url.is_none() {
-            bail!("SMTP_URL is required when EMAIL_DRIVER=smtp");
-        }
         let app_url = url("APP_URL", "http://localhost:3000")?;
         let api_public_url = url("API_PUBLIC_URL", "http://localhost:4000")?;
         let api_internal_url = url("API_INTERNAL_URL", api_public_url.as_str())?;
@@ -110,9 +94,6 @@ impl Config {
             auth_code_ttl: seconds("AUTH_CODE_TTL_SECONDS", 5 * 60)?,
             auth_request_ttl: seconds("AUTH_REQUEST_TTL_SECONDS", 10 * 60)?,
             handoff_ttl: seconds("HANDOFF_TTL_SECONDS", 2 * 60)?,
-            email_driver,
-            email_from: value("EMAIL_FROM", "Agent SaaS Starter <noreply@example.com>"),
-            smtp_url,
             oidc_providers,
             dcr_enabled: boolean("DCR_ENABLED", true)?,
             cimd_allowed_origins,

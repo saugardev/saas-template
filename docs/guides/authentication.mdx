@@ -7,7 +7,9 @@ description: First-party sessions, social OIDC, and the agent-facing authorizati
 
 Registration creates a user, workspace, and default project in one transaction, then issues an opaque application session. Next.js stores only the session token in an HttpOnly, `SameSite=Lax` cookie and forwards it to the API as a `Session` authorization header.
 
-Passwords use Argon2id. Verification and reset tokens are random, hashed at rest, expiring, and single-use. A successful password reset consumes all outstanding reset links and revokes existing sessions and OAuth refresh grants. Already issued access JWTs remain valid until their expiry (15 minutes by default, plus 30 seconds of clock tolerance).
+Passwords use Argon2id. Email addresses are login identifiers; registration does not verify ownership of the address. The starter sends no email and has no verification, password-reset, or account-recovery flow. Password accounts report `email_verified: false`; a verified upstream OIDC identity can supply that claim.
+
+Migration `0003_remove_email_delivery.sql` drops the unused verification and reset-token tables. Existing accounts, passwords, sessions, and OAuth grants are preserved. Previously issued recovery links stop working.
 
 ## Social OpenID Connect
 
@@ -24,7 +26,7 @@ Configure any conforming provider in `OIDC_PROVIDERS_JSON`:
 }
 ```
 
-Start from `/auth/start/{provider}` on the app. The callback uses state, nonce, and S256 PKCE. The app also creates an HttpOnly browser verifier; the API binds the login and single-use handoff to its SHA-256 challenge. A different browser cannot consume the handoff. Account linking requires both a verified provider email and a verified existing account. In-flight logins created before the browser-binding migration must restart.
+Start from `/auth/start/{provider}` on the app. The callback uses state, nonce, and S256 PKCE. The app also creates an HttpOnly browser verifier; the API binds the login and single-use handoff to its SHA-256 challenge. A different browser cannot consume the handoff. Account linking requires both a verified provider email and a verified existing account. An unverified password account cannot be automatically linked by email; use its existing sign-in method. In-flight logins created before the browser-binding migration must restart.
 
 Register this callback with the provider, replacing the slug and public API origin as needed:
 

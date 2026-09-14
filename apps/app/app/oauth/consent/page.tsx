@@ -159,7 +159,7 @@ function scopeDescription(scope: string) {
   const descriptions: Record<string, string> = {
     openid: "Identify your account",
     profile: "Read your display name",
-    email: "Read your verified email",
+    email: "Read your email address and verification status",
     offline_access: "Stay connected",
     "project:read": "Read selected project context",
   };

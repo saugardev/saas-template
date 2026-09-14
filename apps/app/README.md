@@ -1,6 +1,6 @@
 # Product app
 
-The browser-facing Next.js BFF for sign-in, email recovery, OAuth consent, workspace/project selection, and API-key management.
+The browser-facing Next.js BFF for sign-in, OAuth consent, workspace/project selection, and API-key management.
 
 Run it through the repository root so it receives the shared environment:
 

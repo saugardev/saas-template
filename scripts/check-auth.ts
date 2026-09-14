@@ -378,23 +378,22 @@ assert.notEqual(refreshed.refresh_token, tokens.refresh_token);
 await request("/oauth/token", "POST", refresh, undefined, 400);
 refresh.set("refresh_token", refreshed.refresh_token);
 await request("/oauth/token", "POST", refresh, undefined, 400);
+// Removed mail workflows must not remain callable.
+for (const path of [
+  "verification/request",
+  "verification/confirm",
+  "password/forgot",
+  "password/reset",
+])
+  await request(`/api/v1/auth/${path}`, "POST", {}, undefined, 404);
+assert.equal(
+  (await json("/api/v1/me", "GET", undefined, auth)).email_verified,
+  false,
+);
 // Seed only one-time tokens in the disposable test DB, then exercise real HTTP consumers.
 if (process.env.TEST_DATABASE_URL) {
   const { SQL } = await import("bun");
   const db = new SQL(process.env.TEST_DATABASE_URL);
-  const verification = randomBytes(32).toString("base64url");
-  await db`INSERT INTO email_verification_tokens(token_hash,user_id,expires_at) VALUES(${createHash("sha256").update(verification).digest()},${alice.user.id},now()+interval '1 minute')`;
-  await json("/api/v1/auth/verification/confirm", "POST", {
-    token: verification,
-  });
-  assert((await json("/api/v1/me", "GET", undefined, auth)).email_verified);
-  await request(
-    "/api/v1/auth/verification/confirm",
-    "POST",
-    { token: verification },
-    undefined,
-    400,
-  );
   const handoff = randomBytes(32).toString("base64url");
   await db`INSERT INTO session_handoffs(handoff_hash,user_id,workspace_id,project_id,expires_at,browser_challenge) VALUES(${createHash("sha256").update(handoff).digest()},${alice.user.id},${workspace.id},${project.id},now()+interval '1 minute',${challenge})`;
   await request(
@@ -415,39 +414,6 @@ if (process.env.TEST_DATABASE_URL) {
     undefined,
     400,
   );
-  const reset = randomBytes(32).toString("base64url");
-  const oldReset = randomBytes(32).toString("base64url");
-  for (const token of [reset, oldReset])
-    await db`INSERT INTO password_reset_tokens(token_hash,user_id,expires_at) VALUES(${createHash("sha256").update(token).digest()},${bob.user.id},now()+interval '1 minute')`;
-  await json("/api/v1/auth/password/reset", "POST", {
-    token: reset,
-    password: password + "new",
-  });
-  await request(
-    "/api/v1/auth/password/reset",
-    "POST",
-    { token: oldReset, password },
-    undefined,
-    400,
-  );
-  await request(
-    "/api/v1/me",
-    "GET",
-    undefined,
-    `Session ${bob.session_token}`,
-    401,
-  );
-  await request(
-    "/api/v1/auth/login",
-    "POST",
-    { email: bob.user.email, password },
-    undefined,
-    401,
-  );
-  await json("/api/v1/auth/login", "POST", {
-    email: bob.user.email,
-    password: password + "new",
-  });
   await db.close();
 }
 await request("/api/v1/auth/logout", "POST", undefined, auth, 204);

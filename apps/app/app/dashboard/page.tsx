@@ -6,7 +6,6 @@ import {
   createProjectAction,
   createWorkspaceAction,
   logoutAction,
-  resendVerificationAction,
   revokeApiKeyAction,
   selectContextAction,
 } from "@/app/actions";
@@ -20,7 +19,6 @@ type Me = {
   user_id: string;
   email: string;
   name: string;
-  email_verified: boolean;
   workspace_id: string;
   project_id: string;
   role: string;
@@ -102,22 +100,6 @@ export default async function DashboardPage() {
             credentials, and agent access.
           </p>
         </div>
-        {!me.email_verified ? (
-          <div className="mb-8 rounded-lg border border-border bg-muted p-4 text-sm">
-            <p>
-              Verify <strong>{me.email}</strong> to finish securing your account.
-              Check your inbox for the verification link.
-            </p>
-            <div className="mt-3 max-w-xs">
-              <SimpleForm
-                action={resendVerificationAction}
-                submitLabel="Resend verification email"
-              >
-                <input type="hidden" name="email" value={me.email} />
-              </SimpleForm>
-            </div>
-          </div>
-        ) : null}
         <div className="grid gap-6 lg:grid-cols-3">
           <section className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
             <div className="mb-5">

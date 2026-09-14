@@ -88,11 +88,6 @@ export function AuthForm({
         <Link className="link" href={registering ? "/login" : "/register"}>
           {registering ? "Already have an account?" : "Create an account"}
         </Link>
-        {!registering ? (
-          <Link className="link" href="/forgot-password">
-            Forgot password?
-          </Link>
-        ) : null}
       </div>
     </form>
   );

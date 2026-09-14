@@ -32,13 +32,9 @@ MCP_PUBLIC_URL=https://your-public-origin
 MCP_RESOURCE=https://your-public-origin/mcp
 API_INTERNAL_URL=http://127.0.0.1:4000
 DATABASE_URL="postgresql:///saas_template?host=/var/run/postgresql&user=jio"
-EMAIL_DRIVER=smtp
-SMTP_URL=smtp://127.0.0.1:1025
 ```
 
 Copy other settings from `.env.example`. Generate a new RSA signing key on this computer with `bun run keys:dev`, protect `.env` and the key files, and retain them across service restarts. Set the app, docs, and landing URLs to origins, without paths. Do not upload your Jio credentials to the guest.
-
-For the review deployment, SMTP pointed at Mailpit on loopback port `1025`, with its inbox on loopback `8025`. Neither port was exposed. Use your real SMTP provider for customer email.
 
 ## Reverse proxy
 
@@ -69,7 +65,7 @@ Run the following under separate systemd services as `jio`, with `WorkingDirecto
 /usr/local/bin/bun --cwd apps/app start --hostname 127.0.0.1 --port 3000
 ```
 
-Enable the services at boot. Start PostgreSQL and SMTP before testing registration. The API applies embedded migrations at startup. For docs, run the docs app on loopback `3003` and optionally publish a second nginx listener on `8081`.
+Enable the services at boot. Start PostgreSQL before testing registration. The API applies embedded migrations at startup. For docs, run the docs app on loopback `3003` and optionally publish a second nginx listener on `8081`.
 
 From your trusted machine:
 
@@ -77,4 +73,4 @@ From your trusted machine:
 jio expose 8080 <vm-id>
 ```
 
-Open the public app, register, verify email, and sign in. Connect [ChatGPT](../clients/chatgpt.mdx) and [Claude](../clients/claude.mdx) to `https://your-public-origin/mcp`. Run the [authentication checks](./validation.mdx) against the deployed origin before sharing it. Use a stable hostname and durable database/key backups for a lasting deployment.
+Open the public app, register and sign in. Connect [ChatGPT](../clients/chatgpt.mdx) and [Claude](../clients/claude.mdx) to `https://your-public-origin/mcp`. Run the [authentication checks](./validation.mdx) against the deployed origin before sharing it. Use a stable hostname and durable database/key backups for a lasting deployment.

@@ -32,7 +32,7 @@ With the API and MCP running against a disposable database:
 API_PUBLIC_URL=http://localhost:4000 MCP_RESOURCE=http://localhost:4001/mcp bun run test:auth
 ```
 
-This creates uniquely named test accounts. Set `TEST_DATABASE_URL` to the same deployment's database to include verification, password-reset, and browser-handoff checks. See [validation](guides/validation.mdx) for coverage and results.
+This creates uniquely named test accounts. Set `TEST_DATABASE_URL` to the same deployment's database to include browser-handoff checks. See [validation](guides/validation.mdx) for coverage and results.
 
 ## Repository layout
 

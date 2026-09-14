@@ -27,16 +27,6 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/auth/login", post(login))
         .route("/api/v1/auth/logout", post(logout))
         .route("/api/v1/auth/providers", get(providers))
-        .route(
-            "/api/v1/auth/verification/request",
-            post(request_verification),
-        )
-        .route(
-            "/api/v1/auth/verification/confirm",
-            post(confirm_verification),
-        )
-        .route("/api/v1/auth/password/forgot", post(forgot_password))
-        .route("/api/v1/auth/password/reset", post(reset_password))
         .route("/api/v1/auth/oidc/{provider}/start", get(oidc_start))
         .route("/api/v1/auth/oidc/{provider}/callback", get(oidc_callback))
         .route(
@@ -141,7 +131,6 @@ async fn register(
     .map_err(ApiError::internal)?;
     transaction.commit().await.map_err(ApiError::internal)?;
 
-    send_verification(&state, user_id, &email).await?;
     let session_token = state
         .create_session(user_id, workspace_id, project_id)
         .await?;
@@ -243,176 +232,6 @@ async fn providers(State(state): State<AppState>) -> Json<serde_json::Value> {
 
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<SessionUser>> {
     Ok(Json(state.session_user(&headers).await?))
-}
-
-#[derive(Debug, Deserialize)]
-struct EmailRequest {
-    email: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct TokenRequest {
-    token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ResetRequest {
-    token: String,
-    password: String,
-}
-
-async fn request_verification(
-    State(state): State<AppState>,
-    Json(request): Json<EmailRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let email = normalize_email(&request.email)?;
-    if let Some(user_id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT user_id FROM users WHERE lower(email) = lower($1) AND email_verified_at IS NULL",
-    )
-    .bind(&email)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(ApiError::internal)?
-    {
-        send_verification(&state, user_id, &email).await?;
-    }
-    Ok(Json(json!({"accepted": true})))
-}
-
-async fn confirm_verification(
-    State(state): State<AppState>,
-    Json(request): Json<TokenRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let mut transaction = state.db.begin().await.map_err(ApiError::internal)?;
-    let row = sqlx::query(
-        "SELECT user_id FROM email_verification_tokens WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at > now() FOR UPDATE",
-    )
-    .bind(hash_token(request.token.trim()))
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(ApiError::internal)?
-    .ok_or_else(|| ApiError::bad_request("invalid_token", "Verification link is invalid or expired"))?;
-    let user_id: Uuid = row.get("user_id");
-    sqlx::query("UPDATE email_verification_tokens SET consumed_at=now() WHERE token_hash=$1")
-        .bind(hash_token(request.token.trim()))
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    sqlx::query("UPDATE users SET email_verified_at=COALESCE(email_verified_at,now()),updated_at=now() WHERE user_id=$1")
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    transaction.commit().await.map_err(ApiError::internal)?;
-    Ok(Json(json!({"verified": true})))
-}
-
-async fn forgot_password(
-    State(state): State<AppState>,
-    Json(request): Json<EmailRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let email = normalize_email(&request.email)?;
-    if let Some(user_id) =
-        sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM users WHERE lower(email)=lower($1)")
-            .bind(&email)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(ApiError::internal)?
-    {
-        let token = random_token(32);
-        sqlx::query("INSERT INTO password_reset_tokens (token_hash,user_id,expires_at) VALUES ($1,$2,now()+interval '30 minutes')")
-            .bind(hash_token(&token))
-            .bind(user_id)
-            .execute(&state.db)
-            .await
-            .map_err(ApiError::internal)?;
-        let mut reset_url = state
-            .config
-            .app_url
-            .join("/reset-password")
-            .map_err(ApiError::internal)?;
-        reset_url.query_pairs_mut().append_pair("token", &token);
-        if let Err(error) = state
-            .email
-            .send(&email, "Reset your password", reset_url.as_str())
-            .await
-        {
-            tracing::error!(error = %error, "password reset email delivery failed");
-        }
-    }
-    Ok(Json(json!({"accepted": true})))
-}
-
-async fn reset_password(
-    State(state): State<AppState>,
-    Json(request): Json<ResetRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
-    validate_password(&request.password)?;
-    let password_hash = hash_user_password(request.password).await?;
-    let token_hash = hash_token(request.token.trim());
-    let mut transaction = state.db.begin().await.map_err(ApiError::internal)?;
-    let user_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT user_id FROM password_reset_tokens WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at > now() FOR UPDATE",
-    )
-    .bind(&token_hash)
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(ApiError::internal)?
-    .ok_or_else(|| ApiError::bad_request("invalid_token", "Reset link is invalid or expired"))?;
-    sqlx::query("UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL")
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    sqlx::query("UPDATE users SET password_hash=$1,updated_at=now() WHERE user_id=$2")
-        .bind(password_hash)
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    sqlx::query("UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL")
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    sqlx::query("UPDATE oauth_refresh_tokens SET revoked_at=COALESCE(revoked_at,now()) WHERE grant_id IN (SELECT grant_id FROM oauth_grants WHERE user_id=$1)")
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    sqlx::query("UPDATE oauth_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=$1")
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(ApiError::internal)?;
-    transaction.commit().await.map_err(ApiError::internal)?;
-    Ok(Json(json!({"reset": true})))
-}
-
-async fn send_verification(state: &AppState, user_id: Uuid, email: &str) -> ApiResult<()> {
-    let token = random_token(32);
-    sqlx::query("INSERT INTO email_verification_tokens (token_hash,user_id,expires_at) VALUES ($1,$2,now()+interval '24 hours')")
-        .bind(hash_token(&token))
-        .bind(user_id)
-        .execute(&state.db)
-        .await
-        .map_err(ApiError::internal)?;
-    let mut verification_url = state
-        .config
-        .app_url
-        .join("/verify-email")
-        .map_err(ApiError::internal)?;
-    verification_url
-        .query_pairs_mut()
-        .append_pair("token", &token);
-    if let Err(error) = state
-        .email
-        .send(email, "Verify your email", verification_url.as_str())
-        .await
-    {
-        tracing::error!(error = %error, "verification email delivery failed");
-    }
-    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -784,7 +603,7 @@ async fn upsert_oidc_user(
             .is_none()
         {
             return Err(ApiError::forbidden(
-                "Verify the existing account before linking this identity",
+                "An account already exists for this email; use its existing sign-in method",
             ));
         }
         let user_id: Uuid = row.get("user_id");

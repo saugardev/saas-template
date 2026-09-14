@@ -1,5 +1,5 @@
 const features = [
-  ["Identity", "Password auth, verified email, generic social OIDC, and opaque browser sessions."],
+  ["Identity", "Password auth, generic social OIDC, and opaque browser sessions."],
   ["Tenancy", "Workspace and project isolation with role-aware access and scoped API keys."],
   ["Agent access", "OAuth 2.1, OIDC, protected-resource discovery, and Streamable HTTP MCP."],
 ] as const;

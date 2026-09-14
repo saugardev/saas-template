@@ -5,12 +5,11 @@ description: Review findings, executable checks, and live client evidence.
 
 ## Live client tests
 
-Tested on September 14, 2026, using a Jio Large VM (4 vCPU, 8 GiB RAM), Ubuntu, PostgreSQL, release Rust binaries, and production Next.js builds behind public HTTPS. The reviewed implementation and executable checks are at `0200318` on `feat/mcp-oauth-validation`, based on `bd7483181ca781141d92da8bc50b86d2d8481442`.
+Tested on September 14, 2026, using a Jio Large VM (4 vCPU, 8 GiB RAM), Ubuntu, PostgreSQL, release Rust binaries, and production Next.js builds behind public HTTPS. The initial OAuth integration was reviewed at `0200318`, based on `bd7483181ca781141d92da8bc50b86d2d8481442`.
 
 | Path | Observed result |
 | --- | --- |
 | Browser registration and password sign-in | Application session and dashboard worked |
-| Email verification | Real SMTP message reached a private Mailpit inbox; browser verification succeeded |
 | ChatGPT web OAuth | Published CIMD identity, sign-in and project consent succeeded |
 | ChatGPT tool call | `get_random_number` called the protected API and returned **84** |
 | Claude web OAuth | Published CIMD identity, sign-in and project consent succeeded |
@@ -30,13 +29,13 @@ API_PUBLIC_URL=https://your-public-origin \
   bun run test:auth
 ```
 
-`scripts/check-auth.ts` creates disposable accounts and exercises 56 HTTP checks: login/logout, tenant isolation, workspace/project management, API-key creation/use/revocation, discovery, dynamic registration, consent, PKCE, authorization-code replay, UserInfo, random-number authorization, MCP initialization/tool listing/calling, refresh rotation/replay/narrowing, and revocation.
+`scripts/check-auth.ts` creates disposable accounts and exercises HTTP checks for login/logout, tenant isolation, workspace/project management, API-key creation/use/revocation, discovery, dynamic registration, consent, PKCE, authorization-code replay, UserInfo, random-number authorization, MCP initialization/tool listing/calling, refresh rotation/replay/narrowing, and revocation.
 
-With `TEST_DATABASE_URL` pointing to the same test deployment, 11 additional checks seed one-time records and test email verification, password reset, session revocation, and browser-bound OIDC handoffs. Do not point this option at an unrelated database. The script leaves its uniquely named test accounts in place for inspection.
+With `TEST_DATABASE_URL` pointing to the same test deployment, three additional checks seed one-time records and test browser-bound OIDC handoffs. Do not point this option at an unrelated database. The script leaves its uniquely named test accounts in place for inspection. The removed email/recovery API routes are checked to return 404, and password registration must not report a verified email.
 
 The Rust suite includes real database migration/constraint checks when `TEST_DATABASE_URL` is set. `scripts/redirect.test.ts` exercises the shared browser return-URL guard. The full check also runs formatting, clippy, lint, TypeScript, and all three production web builds.
 
-Final results: **27 Rust tests**, **one Bun redirect test**, **67 local HTTP checks**, and **56 public HTTPS checks** passed. Formatting, clippy, all three apps' lint/type checks, and all three production builds passed. The additional database-seeded checks ran against the isolated local PostgreSQL instance; Bun's attempted connection to the guest's SQLx-style Unix-socket URL failed authentication, so that attempt is not counted as a passing guest database test.
+After removing outbound email, **27 Rust tests**, **one Bun redirect test**, and **64 local HTTP checks** passed. Formatting, clippy, all three apps' lint/type checks, and all three production builds passed. Database-seeded handoff checks ran against the isolated local PostgreSQL instance.
 
 ## Fixes found during review
 
@@ -45,15 +44,14 @@ Final results: **27 Rust tests**, **one Bun redirect test**, **67 local HTTP che
 - Bind social-login handoffs to a browser-held verifier before issuing a session.
 - Reject unsafe return URLs and malformed PKCE values.
 - Refuse automatic social linking to an existing unverified password account.
-- Consume all outstanding reset links and revoke sessions/refresh grants on password reset.
 - Preserve narrowed refresh scopes and validate client/resource before replay revocation.
 - Accept Claude's compatible code flow without enabling its other advertised grant types.
 - Track migration files as Cargo build inputs so incremental binaries embed new migrations.
 
 ## Limits of the evidence
 
-No real upstream Google or other social-provider credentials were configured. Browser binding and handoff consumption were tested, but a complete upstream social login was not. Mailpit verifies SMTP transport and the email-link flow; it is not evidence of delivery to external email providers.
+No real upstream Google or other social-provider credentials were configured. Browser binding and handoff consumption were tested, but a complete upstream social login was not.
 
-Existing access JWTs remain valid until expiry (normally 15 minutes, with 30 seconds of validation tolerance), including after logout, refresh revocation, or password reset. Refresh credentials and application sessions are revoked immediately. Project membership is checked again by the random-number API. Immediate access-token revocation would require an additional authoritative check.
+Existing access JWTs remain valid until expiry (normally 15 minutes, with 30 seconds of validation tolerance), including after logout, refresh revocation. Refresh credentials and application sessions are revoked immediately. Project membership is checked again by the random-number API. Immediate access-token revocation would require an additional authoritative check.
 
-This is a functional deployment review, not a penetration-test certification or availability guarantee. Distributed rate limiting, production email delivery, backups, monitoring, and signing-key rotation remain deployment responsibilities. The repository has no billing implementation. The test VM must remain allocated for its connector URLs to work.
+This is a functional deployment review, not a penetration-test certification or availability guarantee. Distributed rate limiting, backups, monitoring, and signing-key rotation remain deployment responsibilities. The repository has no billing implementation. The test VM must remain allocated for its connector URLs to work.
