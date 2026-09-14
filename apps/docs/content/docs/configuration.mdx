@@ -9,6 +9,7 @@ Copy `.env.example` to `.env`. The main settings are:
 | --- | --- |
 | `APP_URL` | Browser application origin |
 | `DOCS_URL` | Documentation origin |
+| `API_INTERNAL_URL` | Private API origin used by the BFF and MCP; share this configuration with the API host guard |
 | `API_PUBLIC_URL` | Public API origin and upstream OIDC callback base |
 | `AUTH_ISSUER` | Exact OAuth/OIDC issuer |
 | `MCP_PUBLIC_URL` | MCP service origin |
@@ -33,3 +34,5 @@ Each upstream entry in `OIDC_PROVIDERS_JSON` must request `openid` and `email`; 
 - Limit `CIMD_ALLOWED_ORIGINS` to clients you intend to support.
 - Use a dedicated PostgreSQL role and encrypted backups.
 - Set `NEXT_PUBLIC_GITHUB_URL` if you want source links in the documentation.
+
+Keep values containing spaces quoted in `.env`. Bind private services to loopback or a trusted private network. The production host guard accepts only the configured public and internal API hosts; this check does not replace authentication.

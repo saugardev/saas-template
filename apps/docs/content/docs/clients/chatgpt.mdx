@@ -12,3 +12,9 @@ description: Connect the protected MCP endpoint as a ChatGPT app.
 ChatGPT can identify itself with a client ID metadata document URL. The API fetches that JSON only from allowlisted HTTPS origins, rejects redirects, blocks private/reserved DNS targets, limits the response size, and validates redirect URIs and public-client authentication before caching it.
 
 For clients that use dynamic registration instead, leave `DCR_ENABLED=true`.
+
+In the ChatGPT web UI, enable developer mode where available, create an app with OAuth authentication, and use the public `/mcp` URL. Leave custom client credentials empty to use ChatGPT's published client metadata. After connecting, refresh the app's actions if the list is initially empty.
+
+Start a chat with the app enabled and ask: “Call get_random_number once and return the tool result.” The only tool calls the API and returns an integer from 0 through 100. OAuth consent and an actual tool call were verified on the [Jio deployment](/docs/guides/validation).
+
+See [OpenAI's authentication guide](https://developers.openai.com/plugins/build/auth) for current client requirements.

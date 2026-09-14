@@ -12,7 +12,7 @@ The metadata points clients to `AUTH_ISSUER`. Unauthenticated MCP requests retur
 
 ## Example tool
 
-`get_project_context` is intentionally read-only. It returns the user, workspace, project, role, client ID, and scopes authorized for the connection. Replace or extend it in `services/mcp/src/main.rs`.
+`get_random_number` is the only tool. It calls `GET /api/v1/random-number` with the OAuth bearer token and returns `{ "number": 42 }` (an integer from 0 through 100). The API verifies the token and current project membership. No identity or credentials are returned by the tool.
 
 Its OAuth scheme appears in both the top-level `securitySchemes` field and `_meta.securitySchemes` for client compatibility. Tool-level authentication errors also include `_meta["mcp/www_authenticate"]`.
 
