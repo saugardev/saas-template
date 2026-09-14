@@ -10,6 +10,7 @@ pub struct Config {
     pub app_url: Url,
     pub docs_url: Url,
     pub api_public_url: Url,
+    pub api_internal_url: Url,
     pub auth_issuer: Url,
     pub mcp_resource: Url,
     pub database_url: String,
@@ -49,6 +50,7 @@ impl Config {
         }
         let app_url = url("APP_URL", "http://localhost:3000")?;
         let api_public_url = url("API_PUBLIC_URL", "http://localhost:4000")?;
+        let api_internal_url = url("API_INTERNAL_URL", api_public_url.as_str())?;
         let auth_issuer = url("AUTH_ISSUER", api_public_url.as_str())?;
         let docs_url = url("DOCS_URL", "http://localhost:3003")?;
         let mcp_resource = url("MCP_RESOURCE", "http://localhost:4001/mcp")?;
@@ -56,6 +58,7 @@ impl Config {
             ("APP_URL", &app_url),
             ("DOCS_URL", &docs_url),
             ("API_PUBLIC_URL", &api_public_url),
+            ("API_INTERNAL_URL", &api_internal_url),
             ("AUTH_ISSUER", &auth_issuer),
         ] {
             ensure_origin_url(name, candidate)?;
@@ -91,6 +94,7 @@ impl Config {
             app_url,
             docs_url,
             api_public_url,
+            api_internal_url,
             auth_issuer,
             mcp_resource,
             database_url: required("DATABASE_URL")?,

@@ -21,7 +21,6 @@ export default async function LoginPage({
   const providers = await api<{ providers: Provider[] }>(
     "/api/v1/auth/providers",
   ).catch(() => ({ providers: [] }));
-  const apiUrl = process.env.API_PUBLIC_URL ?? "http://localhost:4000";
 
   return (
     <AuthShell
@@ -42,7 +41,7 @@ export default async function LoginPage({
             <a
               key={provider.slug}
               className="flex min-h-11 w-full items-center justify-center rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-              href={`${apiUrl}/api/v1/auth/oidc/${encodeURIComponent(provider.slug)}/start?return_to=${encodeURIComponent(returnTo)}`}
+              href={`/auth/start/${encodeURIComponent(provider.slug)}?return_to=${encodeURIComponent(returnTo)}`}
             >
               Continue with {provider.label}
             </a>

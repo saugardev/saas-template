@@ -40,6 +40,10 @@ curl http://localhost:4000/api/v1/project-context \
   -H "Authorization: ApiKey sk_..."
 ```
 
+## Random-number API
+
+`GET /api/v1/random-number` requires `Authorization: Bearer <access-token>` with the configured MCP resource audience and `project:read`. It returns `{ "number": 42 }`, where the number is an integer from 0 through 100. Application sessions and API keys are not accepted on this OAuth resource route.
+
 ## OAuth and MCP
 
 See [Authentication](/docs/guides/authentication) for the authorization-server endpoints and [MCP server](/docs/guides/mcp) for protected-resource discovery.

@@ -53,8 +53,9 @@ export function safeReturnTo(
   value: FormDataEntryValue | string | null | undefined,
 ) {
   const target = typeof value === "string" ? value : "/dashboard";
-  return target.startsWith("/") && !target.startsWith("//")
+  return target.startsWith("/") &&
+    !target.startsWith("//") &&
+    !/[\\\x00-\x20\x7f]/.test(target)
     ? target
     : "/dashboard";
 }
-

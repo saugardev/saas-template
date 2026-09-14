@@ -19,7 +19,9 @@
     "lint": "bun --cwd apps/app lint && bun --cwd apps/docs lint && bun --cwd apps/landing lint",
     "types:check": "bun --cwd apps/app types:check && bun --cwd apps/docs types:check && bun --cwd apps/landing types:check",
     "check:rust": "cargo fmt --check && cargo check --workspace --all-targets && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
-    "check": "bun run lint && bun run types:check && bun run build && bun run check:rust",
-    "keys:dev": "./scripts/generate-dev-key.sh"
+    "check": "bun run test:web && bun run lint && bun run types:check && bun run build && bun run check:rust",
+    "keys:dev": "./scripts/generate-dev-key.sh",
+    "test:auth": "bun scripts/check-auth.ts",
+    "test:web": "bun test scripts/redirect.test.ts"
   }
 }

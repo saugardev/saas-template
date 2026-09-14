@@ -41,6 +41,7 @@ pub fn router() -> Router<AppState> {
         .route("/oauth/register", post(register))
         .route("/oauth/revoke", post(revoke))
         .route("/oauth/userinfo", get(userinfo).post(userinfo))
+        .route("/api/v1/random-number", get(random_number))
         .route(
             "/api/v1/oauth/authorization-requests/{request_id}",
             get(consent_request).post(decide_consent),
@@ -267,7 +268,12 @@ async fn authorize(
     let challenge = query
         .code_challenge
         .as_deref()
-        .filter(|value| (43..=128).contains(&value.len()))
+        .filter(|value| {
+            value.len() == 43
+                && value
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        })
         .ok_or_else(|| {
             ApiError::bad_request("invalid_request", "A valid PKCE code_challenge is required")
         })?;
@@ -402,12 +408,9 @@ async fn resolve_client(state: &AppState, client_id: &str) -> ApiResult<Client> 
         validate_cimd_redirect_uri(&metadata_url, redirect)
             .map_err(|error| ApiError::bad_request("invalid_client", error.to_string()))?;
     }
-    if metadata
-        .grant_types
-        .iter()
-        .any(|value| value != "authorization_code" && value != "refresh_token")
-        || metadata.response_types.iter().any(|value| value != "code")
-    {
+    // CIMD describes the client's capabilities, not a request to enable every grant.
+    // Claude also advertises jwt-bearer; this server still accepts only code + PKCE.
+    if !supports_code_flow(&metadata.grant_types, &metadata.response_types) {
         return Err(ApiError::bad_request(
             "invalid_client",
             "Client metadata requests an unsupported OAuth flow",
@@ -432,6 +435,11 @@ async fn resolve_client(state: &AppState, client_id: &str) -> ApiResult<Client> 
         registration_type: "cimd".to_string(),
         status: "active".to_string(),
     })
+}
+
+fn supports_code_flow(grants: &[String], responses: &[String]) -> bool {
+    (grants.is_empty() || grants.iter().any(|grant| grant == "authorization_code"))
+        && (responses.is_empty() || responses.iter().any(|response| response == "code"))
 }
 
 async fn load_client(state: &AppState, client_id: &str) -> ApiResult<Option<Client>> {
@@ -798,6 +806,14 @@ async fn refresh_token(
         .map_err(OAuthEndpointError::server)?
         .ok_or_else(|| OAuthEndpointError::invalid_grant("Refresh token is invalid"))?;
     let family_id: Uuid = row.get("family_id");
+    // Reject a mismatched client/resource before a replay can revoke this family.
+    if row.get::<String, _>("client_id") != client_id
+        || !resource_matches(resource, &state.config.mcp_resource)
+    {
+        return Err(OAuthEndpointError::invalid_grant(
+            "Refresh token validation failed",
+        ));
+    }
     if row.get::<Option<DateTime<Utc>>, _>("consumed_at").is_some() {
         sqlx::query("UPDATE oauth_refresh_tokens SET revoked_at=COALESCE(revoked_at,now()) WHERE family_id=$1")
             .bind(family_id)
@@ -847,6 +863,12 @@ async fn refresh_token(
                 "Refresh scope cannot exceed the original grant",
             ));
         }
+        sqlx::query("UPDATE oauth_grants SET scopes=$1 WHERE grant_id=$2")
+            .bind(&scopes)
+            .bind(row.get::<Uuid, _>("grant_id"))
+            .execute(&mut *transaction)
+            .await
+            .map_err(OAuthEndpointError::server)?;
         Some(scopes)
     } else {
         None
@@ -1092,6 +1114,34 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty()).then_some(token.trim())
 }
 
+async fn random_number(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let token = bearer_token(&headers)
+        .ok_or_else(|| ApiError::unauthorized("Bearer access token is required"))?;
+    let context = state
+        .jwt
+        .verifier()
+        .verify_access_token(token, state.config.mcp_resource.as_str(), &["project:read"])
+        .map_err(|_| {
+            ApiError::unauthorized("Access token is invalid, expired or missing project:read")
+        })?;
+    let member = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM memberships m JOIN projects p ON p.workspace_id=m.workspace_id WHERE m.user_id=$1 AND m.workspace_id=$2 AND p.project_id=$3)",
+    )
+    .bind(context.user_id)
+    .bind(context.workspace_id)
+    .bind(context.project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(ApiError::internal)?;
+    if !member {
+        return Err(ApiError::forbidden("Project access is required"));
+    }
+    Ok(Json(json!({"number": rand::random_range(0_u32..=100)})))
+}
+
 async fn insert_audit(
     transaction: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -1116,6 +1166,26 @@ async fn insert_audit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cimd_accepts_additional_client_capabilities_without_enabling_them() {
+        assert!(supports_code_flow(
+            &[
+                "authorization_code".into(),
+                "refresh_token".into(),
+                "urn:ietf:params:oauth:grant-type:jwt-bearer".into()
+            ],
+            &["code".into()]
+        ));
+        assert!(!supports_code_flow(
+            &["client_credentials".into()],
+            &["code".into()]
+        ));
+        assert!(!supports_code_flow(
+            &["authorization_code".into()],
+            &["token".into()]
+        ));
+    }
 
     #[test]
     fn authorization_metadata_advertises_agent_client_requirements() {

@@ -7,7 +7,7 @@ A small, brand-neutral monorepo for building a multi-tenant SaaS product with a 
 - Next.js application for sign-in, consent, workspaces, projects, and API keys
 - Axum API backed by PostgreSQL
 - OAuth Authorization Code + S256 PKCE, CIMD, DCR, refresh rotation, JWKS, and UserInfo
-- `rmcp` Streamable HTTP server with a protected example tool
+- `rmcp` Streamable HTTP server with one API-backed random-number tool
 - Fumadocs documentation and a minimal landing site
 
 There is no product-specific business logic, blockchain integration, billing, TEE, provenance, or deployment infrastructure.
@@ -42,6 +42,16 @@ bun run check
 ```
 
 Default Rust unit tests do not require PostgreSQL. Database integration tests run when `TEST_DATABASE_URL` is set.
+
+With the API and MCP running, exercise authentication and tool access against a disposable database:
+
+```bash
+API_PUBLIC_URL=http://localhost:4000 MCP_RESOURCE=http://localhost:4001/mcp bun run test:auth
+```
+
+The check creates test accounts. Set `TEST_DATABASE_URL` to that deployment's database to also check verification, password reset, and browser-bound login handoffs.
+
+Read the [Jio deployment guide](apps/docs/content/docs/guides/jio-deployment.mdx) and [validation results](apps/docs/content/docs/guides/validation.mdx), including live ChatGPT and Claude OAuth tests and remaining limitations.
 
 ## Security boundary
 

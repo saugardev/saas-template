@@ -34,6 +34,13 @@ pub fn pkce_challenge(verifier: &str) -> String {
 }
 
 pub fn verify_pkce(verifier: &str, expected_challenge: &str) -> bool {
+    if !(43..=128).contains(&verifier.len())
+        || !verifier
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"-._~".contains(&c))
+    {
+        return false;
+    }
     let actual = pkce_challenge(verifier);
     actual
         .as_bytes()
@@ -63,6 +70,13 @@ mod tests {
             verifier,
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         ));
+    }
+
+    #[test]
+    fn invalid_pkce_verifiers_are_rejected() {
+        for value in ["short".to_string(), "x".repeat(129), " ".repeat(43)] {
+            assert!(!verify_pkce(&value, &pkce_challenge(&value)));
+        }
     }
 
     #[test]

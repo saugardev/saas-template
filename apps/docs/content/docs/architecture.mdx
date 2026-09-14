@@ -11,6 +11,7 @@ flowchart LR
   Agent -->|Audience-bound bearer token| MCP[rmcp resource server]
   API --> DB[(PostgreSQL)]
   MCP -->|Local RS256 verification| MCP
+  MCP -->|Authenticated random-number request| API
 ```
 
 ## Responsibilities
@@ -24,7 +25,7 @@ flowchart LR
 | `crates/db` | PostgreSQL connection and embedded migrations |
 | `crates/mcp` | Reusable MCP authorization and security metadata helpers |
 
-The MCP service does not call the API on every request. It validates the JWT signature, issuer, audience, expiry, and scope locally. The access token carries the user, workspace, project, role, client, and scope chosen during consent.
+MCP discovery validates tokens locally; each random-number tool call also reaches the API. It validates the JWT signature, issuer, audience, expiry, and scope locally. The access token carries the user, workspace, project, role, client, and scope chosen during consent.
 
 ## Tenant invariant
 

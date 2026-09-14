@@ -129,14 +129,15 @@ async fn host_guard(
     next: Next,
 ) -> Response {
     if state.config.production() {
-        let expected = state.config.auth_issuer.host_str().unwrap_or_default();
         let actual = request
             .headers()
             .get(header::HOST)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(':').next())
-            .unwrap_or_default();
-        if !actual.eq_ignore_ascii_case(expected) {
+            .and_then(|value| value.to_str().ok());
+        if !allowed_host(
+            actual,
+            &state.config.auth_issuer,
+            &state.config.api_internal_url,
+        ) {
             return (
                 axum::http::StatusCode::MISDIRECTED_REQUEST,
                 Json(json!({"error": {"code": "invalid_host", "message": "Host is not configured for this authorization server"}})),
@@ -145,6 +146,20 @@ async fn host_guard(
         }
     }
     next.run(request).await
+}
+
+fn allowed_host(actual: Option<&str>, public: &url::Url, internal: &url::Url) -> bool {
+    let Some(actual) = actual.and_then(|value| value.parse::<axum::http::uri::Authority>().ok())
+    else {
+        return false;
+    };
+    if actual.as_str().contains('@') || url::Url::parse(&format!("http://{actual}")).is_err() {
+        return false;
+    }
+    [public, internal].iter().any(|url| {
+        url.host_str()
+            .is_some_and(|host| actual.host().eq_ignore_ascii_case(host))
+    })
 }
 
 async fn security_headers(request: Request<axum::body::Body>, next: Next) -> Response {
@@ -175,4 +190,24 @@ fn init_tracing() {
 
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_configured_public_and_internal_hosts_are_accepted() {
+        let public = url::Url::parse("https://api.example.test").unwrap();
+        let internal = url::Url::parse("http://127.0.0.1:4000").unwrap();
+        for value in ["api.example.test", "API.EXAMPLE.TEST:443", "127.0.0.1:4000"] {
+            assert!(super::allowed_host(Some(value), &public, &internal));
+        }
+        for value in [
+            None,
+            Some("evil.example"),
+            Some("api.example.test.evil"),
+            Some("api.example.test:invalid"),
+        ] {
+            assert!(!super::allowed_host(value, &public, &internal));
+        }
+    }
 }

@@ -10,3 +10,9 @@ The starter advertises CIMD and supports public dynamic client registration at `
 After the user approves a project and `project:read`, Claude exchanges the code for an audience-bound access token and optional rotating refresh token.
 
 Client product UIs and availability change over time, so use the vendor&apos;s current instructions for where to add a custom connector. The server-side protocol configuration remains the same.
+
+In Claude web, open Settings → Connectors, add a custom connector with the public `/mcp` URL, and connect it. Leave custom client credentials empty to use `https://claude.ai/oauth/mcp-oauth-client-metadata`. Sign in to the application and approve a project. In a chat, enable the connector, ask it to call `get_random_number`, and approve the read-only tool when prompted.
+
+Claude's metadata advertises additional capabilities, including JWT bearer grants. The server accepts a client that supports Authorization Code and the `code` response type; additional advertised capabilities do not enable additional token grants. This avoids rejecting a compatible client while keeping code plus PKCE as the supported login flow.
+
+The web OAuth flow and actual tool call were verified on the [Jio deployment](/docs/guides/validation). See [Claude's custom connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) for current UI availability.
