@@ -41,6 +41,7 @@ pub fn router() -> Router<AppState> {
         .route("/oauth/register", post(register))
         .route("/oauth/revoke", post(revoke))
         .route("/oauth/userinfo", get(userinfo).post(userinfo))
+        .route("/api/v1/random-number", get(random_number))
         .route(
             "/api/v1/oauth/authorization-requests/{request_id}",
             get(consent_request).post(decide_consent),
@@ -1111,6 +1112,34 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = value.split_once(' ')?;
     (scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty()).then_some(token.trim())
+}
+
+async fn random_number(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let token = bearer_token(&headers)
+        .ok_or_else(|| ApiError::unauthorized("Bearer access token is required"))?;
+    let context = state
+        .jwt
+        .verifier()
+        .verify_access_token(token, state.config.mcp_resource.as_str(), &["project:read"])
+        .map_err(|_| {
+            ApiError::unauthorized("Access token is invalid, expired or missing project:read")
+        })?;
+    let member = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM memberships m JOIN projects p ON p.workspace_id=m.workspace_id WHERE m.user_id=$1 AND m.workspace_id=$2 AND p.project_id=$3)",
+    )
+    .bind(context.user_id)
+    .bind(context.workspace_id)
+    .bind(context.project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(ApiError::internal)?;
+    if !member {
+        return Err(ApiError::forbidden("Project access is required"));
+    }
+    Ok(Json(json!({"number": rand::random_range(0_u32..=100)})))
 }
 
 async fn insert_audit(

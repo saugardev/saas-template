@@ -9,9 +9,9 @@ use rmcp::{
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     },
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use starter_auth::{AuthContext, JwtVerifier};
+use starter_auth::JwtVerifier;
 use starter_mcp::{
     McpAuthorizer, mirror_tool_security_schemes, protected_resource_metadata, require_project_read,
     tool_auth_error, tool_security_meta,
@@ -22,9 +22,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use url::Url;
 
 #[derive(Clone)]
-struct ProjectServer {
+struct RandomServer {
     tool_router: ToolRouter<Self>,
     authorizer: Arc<McpAuthorizer>,
+    http: reqwest::Client,
+    api_url: Url,
 }
 
 const SUPPORTED_MCP_VERSIONS: &[ProtocolVersion] = &[
@@ -33,42 +35,39 @@ const SUPPORTED_MCP_VERSIONS: &[ProtocolVersion] = &[
     ProtocolVersion::V_2025_11_25,
 ];
 
-#[derive(Debug, Serialize)]
-struct ProjectContext {
-    user_id: String,
-    workspace_id: String,
-    project_id: String,
-    role: String,
-    scopes: Vec<String>,
-    client_id: String,
+#[derive(Debug, Serialize, Deserialize)]
+struct RandomNumber {
+    number: u32,
 }
 
 #[tool_router(router = tool_router)]
-impl ProjectServer {
-    fn new(authorizer: Arc<McpAuthorizer>) -> Self {
+impl RandomServer {
+    fn new(authorizer: Arc<McpAuthorizer>, http: reqwest::Client, api_url: Url) -> Self {
         Self {
             tool_router: Self::tool_router(),
             authorizer,
+            http,
+            api_url,
         }
     }
 
-    /// Return the workspace and project selected when this agent connection was approved.
+    /// Fetch a random integer between 0 and 100 inclusive from the authenticated API.
     #[tool(
-        name = "get_project_context",
+        name = "get_random_number",
         annotations(
-            title = "Get project context",
+            title = "Get random number",
             read_only_hint = true,
             destructive_hint = false,
             open_world_hint = false
         ),
-        meta = "project_tool_meta()"
+        meta = "random_tool_meta()"
     )]
-    async fn get_project_context(
+    async fn get_random_number(
         &self,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, ErrorData> {
-        let context = match self.authorizer.validate(&parts.headers, &["project:read"]) {
-            Ok(context) => context,
+        match self.authorizer.validate(&parts.headers, &["project:read"]) {
+            Ok(_) => (),
             Err(_) => {
                 let challenge = self.authorizer.challenge(
                     &["project:read"],
@@ -77,37 +76,58 @@ impl ProjectServer {
                 );
                 return Ok(tool_auth_error(
                     &challenge,
-                    "Authentication is required to read project context",
+                    "Authentication is required to get a random number",
                 ));
             }
         };
-        Ok(CallToolResult::structured(
-            serde_json::to_value(project_context(context))
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?,
-        ))
+        let authorization = parts
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .ok_or_else(|| ErrorData::internal_error("Authorization header is missing", None))?;
+        // The API and MCP are two transports of the same OAuth resource.
+        let response = self
+            .http
+            .get(self.api_url.clone())
+            .header(http::header::AUTHORIZATION, authorization)
+            .send()
+            .await
+            .map_err(|_| ErrorData::internal_error("The random-number API is unavailable", None))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Ok(tool_auth_error(
+                &self.authorizer.challenge(
+                    &["project:read"],
+                    Some("invalid_token"),
+                    Some("Reconnect this MCP server"),
+                ),
+                "Reconnect to get a random number",
+            ));
+        }
+        let number = response
+            .error_for_status()
+            .map_err(|_| {
+                ErrorData::internal_error("The random-number API rejected the request", None)
+            })?
+            .json::<RandomNumber>()
+            .await
+            .map_err(|_| {
+                ErrorData::internal_error(
+                    "The random-number API returned an invalid response",
+                    None,
+                )
+            })?;
+        Ok(CallToolResult::structured(json!(number)))
     }
 }
 
-fn project_context(context: AuthContext) -> ProjectContext {
-    ProjectContext {
-        user_id: context.user_id.to_string(),
-        workspace_id: context.workspace_id.to_string(),
-        project_id: context.project_id.to_string(),
-        role: context.role,
-        scopes: context.scopes,
-        client_id: context.client_id,
-    }
-}
-
-fn project_tool_meta() -> MetaObject {
+fn random_tool_meta() -> MetaObject {
     let mut meta = tool_security_meta(&["project:read"]);
     meta.0.insert(
         "openai/toolInvocation/invoking".to_string(),
-        json!("Reading project context"),
+        json!("Getting a random number"),
     );
     meta.0.insert(
         "openai/toolInvocation/invoked".to_string(),
-        json!("Project context ready"),
+        json!("Random number ready"),
     );
     meta
 }
@@ -116,9 +136,9 @@ fn project_tool_meta() -> MetaObject {
     router = self.tool_router,
     name = "agent-saas-starter",
     version = "0.1.0",
-    instructions = "Use get_project_context to identify the project authorized for this connection. The starter exposes no product-specific actions."
+    instructions = "Use get_random_number to fetch a random integer from the API. This is the only tool."
 )]
-impl ServerHandler for ProjectServer {
+impl ServerHandler for RandomServer {
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
         Cow::Borrowed(SUPPORTED_MCP_VERSIONS)
     }
@@ -158,8 +178,23 @@ async fn main() -> anyhow::Result<()> {
     }
     let cancellation = CancellationToken::new();
     let server_authorizer = authorizer.clone();
+    let api_origin = Url::parse(&value("API_INTERNAL_URL", "http://localhost:4000"))?;
+    if !matches!(api_origin.scheme(), "http" | "https") || api_origin.host_str().is_none() {
+        bail!("API_INTERNAL_URL must be an HTTP(S) URL");
+    }
+    let api_url = api_origin.join("/api/v1/random-number")?;
+    let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(8))
+        .build()?;
     let service = StreamableHttpService::new(
-        move || Ok(ProjectServer::new(server_authorizer.clone())),
+        move || {
+            Ok(RandomServer::new(
+                server_authorizer.clone(),
+                http.clone(),
+                api_url.clone(),
+            ))
+        },
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_allowed_hosts(allowed_hosts)
