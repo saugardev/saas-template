@@ -4,6 +4,8 @@ Build a SaaS app with authentication and OAuth-protected tools for ChatGPT and C
 
 [Documentation](docs/README.md) · [Demo](docs/README.md#demo) · [Contributing](CONTRIBUTING.md)
 
+https://github.com/user-attachments/assets/3e07bcb3-5c6c-4d3a-a878-5cbdae21a35c
+
 ## Getting started
 
 Install Rust 1.94+, Bun 1.3+, OpenSSL, and PostgreSQL, then create the database configured in `.env`:
