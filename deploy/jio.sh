@@ -6,13 +6,14 @@ usage() {
 Usage: ./deploy/jio.sh [vm-id]
 
 Deploy the current Git branch to a Jio Large VM (4 vCPU, 8 GiB).
-Without vm-id, a new VM is created using the local Jio configuration.
+Without vm-id, the last deployment VM is reused or a new one is created.
 Progress goes to stderr; stdout contains only the final landing URL.
 
 Environment:
-  JIO_BIN    Jio CLI path (default: jio)
-  GIT_REPO   Repository URL visible from the VM (default: origin)
-  GIT_REF    Branch or tag to deploy (default: current branch)
+  JIO_BIN      Jio CLI path (default: jio)
+  JIO_VM_FILE  Remembered VM path (default: .local/jio-vm)
+  GIT_REPO     Repository URL visible from the VM (default: origin)
+  GIT_REF      Branch or tag to deploy (default: current branch)
 EOF
 }
 
@@ -45,16 +46,30 @@ case "$git_repo" in
   git@github.com:*) git_repo="https://github.com/${git_repo#git@github.com:}" ;;
 esac
 
+vm_file="${JIO_VM_FILE:-$project_root/.local/jio-vm}"
 vm_id="${1:-}"
+remembered_vm=false
+if [[ -z "$vm_id" && -f "$vm_file" ]]; then
+  IFS= read -r vm_id < "$vm_file" || true
+  remembered_vm=true
+fi
+
 created_vm=false
+vm_line="$("$jio_bin" list | awk -v id="$vm_id" '$1 == id { print; exit }')"
+if [[ "$remembered_vm" == true && -z "$vm_line" ]]; then
+  echo "Remembered Jio VM no longer exists; creating a replacement..." >&2
+  vm_id=""
+fi
 if [[ -z "$vm_id" ]]; then
   echo "Creating Jio Large VM..." >&2
   vm_id="$("$jio_bin" create)"
   created_vm=true
   echo "Created $vm_id" >&2
+  vm_line="$("$jio_bin" list | awk -v id="$vm_id" '$1 == id { print; exit }')"
+elif [[ "$remembered_vm" == true ]]; then
+  echo "Reusing Jio VM $vm_id..." >&2
 fi
 
-vm_line="$("$jio_bin" list | awk -v id="$vm_id" '$1 == id { print; exit }')"
 [[ -n "$vm_line" ]] || die "VM $vm_id was not found"
 if [[ "$vm_line" != *"Large · 4 vCPU · 8 GiB"* ]]; then
   if [[ "$created_vm" == true ]]; then
@@ -62,6 +77,8 @@ if [[ "$vm_line" != *"Large · 4 vCPU · 8 GiB"* ]]; then
   fi
   die "VM $vm_id is not a Large 4-vCPU VM; run 'jio config' and choose Large"
 fi
+mkdir -p "$(dirname "$vm_file")"
+printf '%s\n' "$vm_id" > "$vm_file"
 
 echo "Publishing Jio endpoints..." >&2
 app_url="$("$jio_bin" expose 8080 "$vm_id")"

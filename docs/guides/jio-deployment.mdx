@@ -3,7 +3,7 @@ title: Deploy on Jio
 description: Create a fresh 4-vCPU deployment and print its public URL.
 ---
 
-Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script creates or reuses that computer, builds the monorepo, starts every service, and checks the public endpoints.
+Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, reuses its Docker build cache on later runs, starts every service, and checks the public endpoints.
 
 ```bash
 ./deploy/jio.sh
@@ -16,7 +16,7 @@ landing_url="$(./deploy/jio.sh)"
 open "$landing_url"
 ```
 
-Pass an existing Large computer ID to redeploy it:
+Pass an existing Large computer ID to select it for this and future deploys:
 
 ```bash
 ./deploy/jio.sh <vm-id>
