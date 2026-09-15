@@ -1,76 +1,35 @@
 ---
 title: Deploy on Jio
-description: Run the application and its OAuth-protected MCP server on one computer.
+description: Create a fresh 2-vCPU deployment and print its public URL.
 ---
 
-Use a Large Jio computer (4 vCPU, 8 GiB RAM) for the Rust and Next.js builds. Keep it running while testing the connectors; destroying it removes the database and changes the public URL on the next deployment.
+The deployment script creates or reuses a Jio Medium computer (2 vCPU, 4 GiB), builds the monorepo, starts every service, and checks the public endpoints.
 
 ```bash
-jio config
-jio create
+./deploy/jio.sh
 ```
 
-Inside the computer, check out the reviewed branch under `/home/jio/saas-template`. Install Rust 1.94+, Bun 1.3+, OpenSSL development headers, a C/C++ build toolchain, PostgreSQL, and nginx. The tested Ubuntu packages were:
+Progress and the complete endpoint list are written to stderr. The final stdout line contains only the landing URL, so it can be captured directly:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y build-essential pkg-config libssl-dev cmake postgresql nginx
-sudo -u postgres createuser jio
-sudo -u postgres createdb -O jio saas_template
+landing_url="$(./deploy/jio.sh)"
+open "$landing_url"
 ```
 
-## Public origin and configuration
-
-Use one public port, `8080`, for the application, API, OAuth discovery, and MCP. Obtain its URL with `jio expose 8080 <vm-id>` once the proxy is listening. Set these values in the guest's private `.env`, replacing `https://your-public-origin` with that exact URL:
-
-```dotenv
-APP_ENV=production
-APP_URL=https://your-public-origin
-API_PUBLIC_URL=https://your-public-origin
-AUTH_ISSUER=https://your-public-origin
-MCP_PUBLIC_URL=https://your-public-origin
-MCP_RESOURCE=https://your-public-origin/mcp
-API_INTERNAL_URL=http://127.0.0.1:4000
-DATABASE_URL="postgresql:///saas_template?host=/var/run/postgresql&user=jio"
-```
-
-Copy other settings from `.env.example`. Generate a new RSA signing key on this computer with `bun run keys:dev`, protect `.env` and the key files, and retain them across service restarts. Set the app, docs, and landing URLs to origins, without paths. Do not upload your Jio credentials to the guest.
-
-## Reverse proxy
-
-Bind the web app to `127.0.0.1:3000`, API to `127.0.0.1:4000`, and MCP to `127.0.0.1:4001`. nginx listens on `127.0.0.1:8080`; Jio provides public HTTPS. Route requests as follows:
-
-| Path | Upstream |
-| --- | --- |
-| `/` and exactly `/oauth/consent` | Web app, port 3000 |
-| `/api/`, `/oauth/`, `/.well-known/` | API, port 4000 |
-| `/mcp` and `/.well-known/oauth-protected-resource` | MCP, port 4001 |
-
-Preserve `Host` and `X-Forwarded-Host`, set `X-Forwarded-Proto` to `https`, use HTTP/1.1, disable proxy buffering, and allow long-lived MCP responses. Do not send `/oauth/consent` to the API. Use access logs containing `$uri` rather than `$request_uri` so OAuth codes and other query secrets are not logged. Apply rate limits at the trusted edge to authentication and registration routes.
-
-## Build and keep services running
+Pass an existing Medium computer ID to redeploy it:
 
 ```bash
-bun install --frozen-lockfile
-cargo build --release -p starter-api -p starter-mcp-server
-bun run build:app
-bun run build:docs
+./deploy/jio.sh <vm-id>
 ```
 
-Run the following under separate systemd services as `jio`, with `WorkingDirectory=/home/jio/saas-template`, `EnvironmentFile=/home/jio/saas-template/.env`, and `Restart=on-failure`:
-
-```text
-/home/jio/saas-template/target/release/starter-api
-/home/jio/saas-template/target/release/starter-mcp-server
-/usr/local/bin/bun --cwd apps/app start --hostname 127.0.0.1 --port 3000
-```
-
-Enable the services at boot. Start PostgreSQL before testing registration. The API applies embedded migrations at startup. For docs, run the docs app on loopback `3003` and optionally publish a second nginx listener on `8081`.
-
-From your trusted machine:
+The script uses the current Git branch and its `origin` remote. Override either value when needed:
 
 ```bash
-jio expose 8080 <vm-id>
+GIT_REPO=https://github.com/you/project.git GIT_REF=feature ./deploy/jio.sh
 ```
 
-Open the public app, register and sign in. Connect [ChatGPT](../clients/chatgpt.mdx) and [Claude](../clients/claude.mdx) to `https://your-public-origin/mcp`. Run the [authentication checks](./validation.mdx) against the deployed origin before sharing it. Use a stable hostname and durable database/key backups for a lasting deployment.
+The computer keeps its PostgreSQL volume and OAuth signing keys across redeployments. Destroying the computer removes that state and gives the next deployment new public URLs.
+
+## Connect a client
+
+Open the printed **App** URL, register, and select a project. Then follow [Connect ChatGPT and Claude](../clients/connect.mdx) with the App URL plus `/mcp`.

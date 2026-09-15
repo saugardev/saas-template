@@ -1,0 +1,41 @@
+---
+title: Connect ChatGPT and Claude
+description: Add the deployed OAuth-protected MCP endpoint to either client.
+---
+
+ChatGPT and Claude use the same public MCP endpoint:
+
+```text
+https://your-app-origin/mcp
+```
+
+Use the **App** URL printed by [`deploy/jio.sh`](../guides/jio-deployment.mdx), not the landing or docs URL. Open the app first, register an account, and create or select a project.
+
+## ChatGPT
+
+1. Open **Settings → Apps**. Workspace administrators may instead use **Workspace settings → Apps**.
+2. Enable developer mode if your plan or workspace requires it, then choose **Create**.
+3. Enter the public `/mcp` URL and select OAuth authentication.
+4. Leave custom client credentials empty, scan the tools, and create the app.
+5. Complete sign-in and approve a project. In a new chat, enable the app and ask it to call `get_random_number`.
+
+If the tool is missing after a deployment, refresh the app's actions. Availability and administrator controls vary by plan; see [OpenAI's current developer mode guide](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt).
+
+## Claude
+
+1. Open **Customize → Connectors**, choose **+**, then **Add custom connector**. Team and Enterprise owners can add it for the organization under **Organization settings → Connectors**.
+2. Enter a name and the public `/mcp` URL.
+3. Leave the optional OAuth client ID and secret empty, add the connector, then choose **Connect**.
+4. Complete sign-in and approve a project. In a chat, choose **+ → Connectors**, enable it, and ask it to call `get_random_number`.
+
+See [Claude's current remote connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) if the menu location differs for your plan.
+
+## Quick check
+
+Before configuring either client, verify that discovery is public:
+
+```bash
+curl -fsS https://your-app-origin/.well-known/oauth-protected-resource
+```
+
+The response should name `https://your-app-origin/mcp` as its resource. A direct unauthenticated request to `/mcp` returning `401 Unauthorized` is expected: the client uses that challenge to start OAuth.

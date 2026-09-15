@@ -1,4 +1,4 @@
 {
   "title": "Agent clients",
-  "pages": ["chatgpt", "claude", "other-clients"]
+  "pages": ["connect", "chatgpt", "claude", "other-clients"]
 }
