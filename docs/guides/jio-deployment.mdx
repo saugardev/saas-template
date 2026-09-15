@@ -28,6 +28,14 @@ The script uses the current Git branch and its `origin` remote. Override either 
 GIT_REPO=https://github.com/you/project.git GIT_REF=feature ./deploy/jio.sh
 ```
 
+Set `DEPLOY_IMAGE` to skip compilation on the VM and pull an existing image:
+
+```bash
+DEPLOY_IMAGE=ghcr.io/you/project:sha ./deploy/jio.sh
+```
+
+Pushes to `main` run the included GitHub Actions workflow. It builds the image with GitHub's layer cache, pushes it to GHCR, then deploys it to the same VM. Configure repository secrets `JIO_API_KEY` and `JIO_SSH_KEY`, plus bootstrap variables `JIO_ENDPOINT`, `JIO_VM_ID`, and `JIO_HOST_KEY`. The workflow keeps the current non-secret VM identity in the `jio-state` Git tag, recreates a deleted VM with the same deployment SSH key, and remembers its replacement automatically.
+
 The computer keeps its PostgreSQL volume and OAuth signing keys across redeployments. Destroying the computer removes that state and gives the next deployment new public URLs.
 
 ## Connect a client

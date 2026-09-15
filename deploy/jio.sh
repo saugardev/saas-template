@@ -14,6 +14,7 @@ Environment:
   JIO_VM_FILE  Remembered VM path (default: .local/jio-vm)
   GIT_REPO     Repository URL visible from the VM (default: origin)
   GIT_REF      Branch or tag to deploy (default: current branch)
+  DEPLOY_IMAGE Prebuilt image to pull instead of building on the VM
 EOF
 }
 
@@ -56,8 +57,8 @@ fi
 
 created_vm=false
 vm_line="$("$jio_bin" list | awk -v id="$vm_id" '$1 == id { print; exit }')"
-if [[ "$remembered_vm" == true && -z "$vm_line" ]]; then
-  echo "Remembered Jio VM no longer exists; creating a replacement..." >&2
+if [[ -n "$vm_id" && -z "$vm_line" ]]; then
+  echo "Jio VM $vm_id no longer exists; creating a replacement..." >&2
   vm_id=""
 fi
 if [[ -z "$vm_id" ]]; then
@@ -87,61 +88,6 @@ docs_url="$("$jio_bin" expose 3003 "$vm_id")"
 for url in "$app_url" "$landing_url" "$docs_url"; do
   [[ "$url" == https://* ]] || die "Jio returned an invalid public URL: $url"
 done
-
-dockerfile_b64="$(base64_one_line <<'DOCKERFILE'
-# syntax=docker/dockerfile:1
-FROM rust:1.94-bookworm AS rust-build
-WORKDIR /src
-COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
-    cargo build --locked --release -p starter-api -p starter-mcp-server \
- && mkdir -p /out \
- && cp target/release/starter-api target/release/starter-mcp-server /out/
-
-FROM node:22-bookworm AS web-build
-COPY --from=oven/bun:1.4.2-debian /usr/local/bin/bun /usr/local/bin/bun
-WORKDIR /src
-COPY . .
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
-ARG APP_URL
-ARG LANDING_URL
-ARG DOCS_URL
-ARG API_PUBLIC_URL
-ENV APP_URL=${APP_URL}
-ENV LANDING_URL=${LANDING_URL}
-ENV DOCS_URL=${DOCS_URL}
-ENV API_PUBLIC_URL=${API_PUBLIC_URL}
-ENV API_INTERNAL_URL=http://127.0.0.1:4000
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN touch .env \
- && (cd apps/app && node node_modules/next/dist/bin/next build) \
- && (cd apps/docs && node node_modules/next/dist/bin/next build) \
- && (cd apps/landing && node node_modules/next/dist/bin/next build) \
- && rm .env
-
-FROM node:22-bookworm-slim
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates libssl3 \
- && rm -rf /var/lib/apt/lists/*
-WORKDIR /srv
-COPY --from=web-build /src /srv
-COPY --from=rust-build /out/starter-api /usr/local/bin/starter-api
-COPY --from=rust-build /out/starter-mcp-server /usr/local/bin/starter-mcp-server
-DOCKERFILE
-)"
-
-dockerignore_b64="$(base64_one_line <<'DOCKERIGNORE'
-.git
-**/.next
-**/node_modules
-target
-.env
-.local
-Dockerfile.jio
-Dockerfile.jio.dockerignore
-DOCKERIGNORE
-)"
 
 nginx_b64="$(base64_one_line <<'NGINX'
 events {}
@@ -180,6 +126,7 @@ ref_b64="$(printf '%s' "$git_ref" | base64_one_line)"
 app_b64="$(printf '%s' "$app_url" | base64_one_line)"
 landing_b64="$(printf '%s' "$landing_url" | base64_one_line)"
 docs_b64="$(printf '%s' "$docs_url" | base64_one_line)"
+image_b64="$(printf '%s' "${DEPLOY_IMAGE:-}" | base64_one_line)"
 
 read -r -d '' remote_script <<'REMOTE' || true
 set -Eeuo pipefail
@@ -202,6 +149,7 @@ git_ref="$(decode '__REF_B64__')"
 app_url="$(decode '__APP_B64__')"
 landing_url="$(decode '__LANDING_B64__')"
 docs_url="$(decode '__DOCS_B64__')"
+prebuilt_image="$(decode '__IMAGE_B64__')"
 repo_dir=/workspace/saas-template
 
 command -v git >/dev/null
@@ -221,8 +169,6 @@ else
   git clone --depth 1 --branch "$git_ref" "$repo_url" "$repo_dir"
 fi
 
-decode '__DOCKERFILE_B64__' > "$repo_dir/Dockerfile.jio"
-decode '__DOCKERIGNORE_B64__' > "$repo_dir/Dockerfile.jio.dockerignore"
 decode '__NGINX_B64__' > /workspace/saas-nginx.conf
 
 umask 077
@@ -253,13 +199,18 @@ chmod 600 /workspace/saas.env /workspace/postgres.env "$private_key"
 chmod 644 /workspace/saas-nginx.conf "$public_key"
 
 revision="$(git -C "$repo_dir" rev-parse --short=12 HEAD)"
-image="saas-template:$revision"
-docker build --progress=plain -f "$repo_dir/Dockerfile.jio" -t "$image" \
-  --build-arg "APP_URL=$app_url" \
-  --build-arg "LANDING_URL=$landing_url" \
-  --build-arg "DOCS_URL=$docs_url" \
-  --build-arg "API_PUBLIC_URL=$app_url" \
-  "$repo_dir"
+if [[ -n "$prebuilt_image" ]]; then
+  image="$prebuilt_image"
+  docker pull "$image"
+else
+  image="saas-template:$revision"
+  docker build --progress=plain -f "$repo_dir/deploy/Dockerfile" -t "$image" \
+    --build-arg "APP_URL=$app_url" \
+    --build-arg "LANDING_URL=$landing_url" \
+    --build-arg "DOCS_URL=$docs_url" \
+    --build-arg "API_PUBLIC_URL=$app_url" \
+    "$repo_dir"
+fi
 
 for container in saas-proxy saas-docs saas-landing saas-app saas-mcp saas-api saas-db; do
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -315,8 +266,7 @@ remote_script="${remote_script//__REF_B64__/$ref_b64}"
 remote_script="${remote_script//__APP_B64__/$app_b64}"
 remote_script="${remote_script//__LANDING_B64__/$landing_b64}"
 remote_script="${remote_script//__DOCS_B64__/$docs_b64}"
-remote_script="${remote_script//__DOCKERFILE_B64__/$dockerfile_b64}"
-remote_script="${remote_script//__DOCKERIGNORE_B64__/$dockerignore_b64}"
+remote_script="${remote_script//__IMAGE_B64__/$image_b64}"
 remote_script="${remote_script//__NGINX_B64__/$nginx_b64}"
 remote_script="${remote_script//__VM_ID__/${vm_id:0:12}}"
 remote_b64="$(printf '%s' "$remote_script" | base64_one_line)"

@@ -1,0 +1,135 @@
+name: Deploy to Jio
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: jio-production
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Jio
+        run: |
+          curl -fsSL https://github.com/jiovannish/client/releases/latest/download/install.sh \
+            | env JIO_INSTALL_DIR="$RUNNER_TEMP/bin" sh
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Ensure persistent Jio VM
+        id: vm
+        env:
+          CONFIGURED_HOST_KEY: ${{ vars.JIO_HOST_KEY }}
+          CONFIGURED_VM_ID: ${{ vars.JIO_VM_ID }}
+          JIO_API_KEY: ${{ secrets.JIO_API_KEY }}
+          JIO_ENDPOINT: ${{ vars.JIO_ENDPOINT }}
+          JIO_SSH_KEY: ${{ secrets.JIO_SSH_KEY }}
+          JIO_STATE_DIR: ${{ runner.temp }}/jio
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ -n "$JIO_SSH_KEY" ]] || { echo 'JIO_SSH_KEY is not configured' >&2; exit 1; }
+          install -d -m 700 "$JIO_STATE_DIR" "$JIO_STATE_DIR/sessions"
+          printf 'size=large\n' > "$JIO_STATE_DIR/config"
+
+          if git fetch --force --quiet origin refs/tags/jio-state:refs/tags/jio-state; then
+            tag_state="$(git tag -l jio-state --format='%(contents)')"
+            CONFIGURED_VM_ID="$(printf '%s\n' "$tag_state" | sed -n '1p')"
+            CONFIGURED_HOST_KEY="$(printf '%s\n' "$tag_state" | sed -n '2p')"
+            [[ "$CONFIGURED_VM_ID" =~ ^[0-9a-f]{32}$ && "$CONFIGURED_HOST_KEY" == 'ssh-ed25519 '* ]] || {
+              echo 'jio-state tag is invalid' >&2
+              exit 1
+            }
+          fi
+
+          vm_line="$(jio list | awk -v id="$CONFIGURED_VM_ID" '$1 == id { print; exit }')"
+          if [[ -n "$vm_line" ]]; then
+            [[ "$CONFIGURED_HOST_KEY" == 'ssh-ed25519 '* ]] || { echo 'JIO_HOST_KEY is invalid' >&2; exit 1; }
+            vm_id="$CONFIGURED_VM_ID"
+            session_dir="$JIO_STATE_DIR/sessions/$vm_id"
+            install -d -m 700 "$session_dir"
+            printf '%s\n' "$JIO_SSH_KEY" > "$session_dir/id_ed25519"
+            printf 'jio-%s %s\n' "$vm_id" "$CONFIGURED_HOST_KEY" > "$session_dir/known_hosts"
+            printf 'large\n' > "$session_dir/requested-size"
+            printf '%s' "$vm_id" > "$JIO_STATE_DIR/current-session"
+            if ! jio exec "$vm_id" true --timeout 15 >/dev/null 2>&1; then
+              jio start "$vm_id" >/dev/null
+              jio exec "$vm_id" true --timeout 15 >/dev/null
+            fi
+          else
+            unmanaged_vm="$(jio list | awk 'length($1) == 32 && $1 ~ /^[0-9a-f]+$/ { print $1; exit }')"
+            [[ -z "$unmanaged_vm" ]] || { echo "Jio account contains unmanaged VM $unmanaged_vm" >&2; exit 1; }
+            install -d -m 700 "$RUNNER_TEMP/reuse-key"
+            printf '%s\n' "$JIO_SSH_KEY" > "$RUNNER_TEMP/jio-deploy-key"
+            cat > "$RUNNER_TEMP/reuse-key/ssh-keygen" <<'SH'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          target="${!#}"
+          install -m 600 "$JIO_SSH_KEY_FILE" "$target"
+          /usr/bin/ssh-keygen -y -f "$JIO_SSH_KEY_FILE" > "$target.pub"
+          chmod 600 "$target.pub"
+          SH
+            chmod 700 "$RUNNER_TEMP/reuse-key/ssh-keygen"
+            vm_id="$(PATH="$RUNNER_TEMP/reuse-key:$PATH" JIO_SSH_KEY_FILE="$RUNNER_TEMP/jio-deploy-key" jio create)"
+            session_dir="$JIO_STATE_DIR/sessions/$vm_id"
+          fi
+
+          host_key="$(sed -n "s/^jio-$vm_id //p" "$session_dir/known_hosts")"
+          [[ "$host_key" == 'ssh-ed25519 '* ]] || { echo 'Jio returned an invalid host key' >&2; exit 1; }
+          printf 'id=%s\nhost_key=%s\n' "$vm_id" "$host_key" >> "$GITHUB_OUTPUT"
+
+      - name: Remember Jio VM
+        env:
+          HOST_KEY: ${{ steps.vm.outputs.host_key }}
+          VM_ID: ${{ steps.vm.outputs.id }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          printf '%s\n%s\n' "$VM_ID" "$HOST_KEY" | git tag --force --annotate jio-state "$GITHUB_SHA" --file -
+          git push --force origin refs/tags/jio-state
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            APP_URL=https://${{ steps.vm.outputs.id }}-8080.apps.jiovanni.sh
+            LANDING_URL=https://${{ steps.vm.outputs.id }}-3002.apps.jiovanni.sh
+            DOCS_URL=https://${{ steps.vm.outputs.id }}-3003.apps.jiovanni.sh
+            API_PUBLIC_URL=https://${{ steps.vm.outputs.id }}-8080.apps.jiovanni.sh
+
+      - name: Deploy
+        env:
+          DEPLOY_IMAGE: ${{ env.IMAGE }}
+          JIO_API_KEY: ${{ secrets.JIO_API_KEY }}
+          JIO_ENDPOINT: ${{ vars.JIO_ENDPOINT }}
+          JIO_STATE_DIR: ${{ runner.temp }}/jio
+          JIO_VM_ID: ${{ steps.vm.outputs.id }}
+        run: |
+          landing_url="$(./deploy/jio.sh "$JIO_VM_ID")"
+          printf '### Deployed\n\n%s\n' "$landing_url" >> "$GITHUB_STEP_SUMMARY"
