@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: ./deploy/jio.sh [vm-id]
 
-Deploy the current Git branch to a Jio Medium VM (2 vCPU, 4 GiB).
+Deploy the current Git branch to a Jio Large VM (4 vCPU, 8 GiB).
 Without vm-id, a new VM is created using the local Jio configuration.
 Progress goes to stderr; stdout contains only the final landing URL.
 
@@ -46,19 +46,22 @@ case "$git_repo" in
 esac
 
 vm_id="${1:-}"
+created_vm=false
 if [[ -z "$vm_id" ]]; then
-  jio_state="${JIO_STATE_DIR:-$HOME/.jio}"
-  if [[ -f "$jio_state/config" ]] && ! grep -qx 'size=medium' "$jio_state/config"; then
-    die "Jio is not configured for Medium; run 'jio config' and choose 2 vCPU"
-  fi
-  echo "Creating Jio Medium VM..." >&2
+  echo "Creating Jio Large VM..." >&2
   vm_id="$("$jio_bin" create)"
+  created_vm=true
   echo "Created $vm_id" >&2
 fi
 
 vm_line="$("$jio_bin" list | awk -v id="$vm_id" '$1 == id { print; exit }')"
 [[ -n "$vm_line" ]] || die "VM $vm_id was not found"
-[[ "$vm_line" == *"Medium · 2 vCPU · 4 GiB"* ]] || die "VM $vm_id is not a Medium 2-vCPU VM"
+if [[ "$vm_line" != *"Large · 4 vCPU · 8 GiB"* ]]; then
+  if [[ "$created_vm" == true ]]; then
+    "$jio_bin" destroy "$vm_id" --yes >/dev/null 2>&1 || true
+  fi
+  die "VM $vm_id is not a Large 4-vCPU VM; run 'jio config' and choose Large"
+fi
 
 echo "Publishing Jio endpoints..." >&2
 app_url="$("$jio_bin" expose 8080 "$vm_id")"
@@ -73,7 +76,6 @@ dockerfile_b64="$(base64_one_line <<'DOCKERFILE'
 FROM rust:1.94-bookworm AS rust-build
 WORKDIR /src
 COPY . .
-ENV CARGO_BUILD_JOBS=1
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --locked --release -p starter-api -p starter-mcp-server \
@@ -329,7 +331,7 @@ mcp_document="$(curl -fsS "$app_url/.well-known/oauth-protected-resource")"
 
 {
   echo
-  echo "VM:      $vm_id (Medium · 2 vCPU · 4 GiB)"
+  echo "VM:      $vm_id (Large · 4 vCPU · 8 GiB)"
   echo "Landing: ${landing_url%/}/"
   echo "App:     ${app_url%/}/"
   echo "Docs:    ${docs_url%/}/"

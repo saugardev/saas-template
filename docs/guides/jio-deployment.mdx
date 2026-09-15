@@ -1,9 +1,9 @@
 ---
 title: Deploy on Jio
-description: Create a fresh 2-vCPU deployment and print its public URL.
+description: Create a fresh 4-vCPU deployment and print its public URL.
 ---
 
-The deployment script creates or reuses a Jio Medium computer (2 vCPU, 4 GiB), builds the monorepo, starts every service, and checks the public endpoints.
+Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script creates or reuses that computer, builds the monorepo, starts every service, and checks the public endpoints.
 
 ```bash
 ./deploy/jio.sh
@@ -16,7 +16,7 @@ landing_url="$(./deploy/jio.sh)"
 open "$landing_url"
 ```
 
-Pass an existing Medium computer ID to redeploy it:
+Pass an existing Large computer ID to redeploy it:
 
 ```bash
 ./deploy/jio.sh <vm-id>
