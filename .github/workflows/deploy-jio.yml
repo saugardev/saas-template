@@ -1,4 +1,4 @@
-name: Deploy to Jio
+name: Production Deployment
 
 on:
   push:
@@ -14,17 +14,18 @@ permissions:
 
 jobs:
   deploy:
+    name: Deploy to production
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Jio
+      - name: Install Jio CLI
         run: |
           curl -fsSL https://github.com/jiovannish/client/releases/latest/download/install.sh \
             | env JIO_INSTALL_DIR="$RUNNER_TEMP/bin" sh
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Ensure persistent Jio VM
+      - name: Resolve production runtime
         id: vm
         env:
           CONFIGURED_HOST_KEY: ${{ vars.JIO_HOST_KEY }}
@@ -86,7 +87,7 @@ jobs:
           [[ "$host_key" == 'ssh-ed25519 '* ]] || { echo 'Jio returned an invalid host key' >&2; exit 1; }
           printf 'id=%s\nhost_key=%s\n' "$vm_id" "$host_key" >> "$GITHUB_OUTPUT"
 
-      - name: Remember Jio VM
+      - name: Persist production state
         env:
           HOST_KEY: ${{ steps.vm.outputs.host_key }}
           VM_ID: ${{ steps.vm.outputs.id }}
@@ -96,7 +97,7 @@ jobs:
           printf '%s\n%s\n' "$VM_ID" "$HOST_KEY" | git tag --force --annotate jio-state "$GITHUB_SHA" --file -
           git push --force origin refs/tags/jio-state
 
-      - name: Deploy
+      - name: Deploy native services
         env:
           GIT_REF: ${{ github.sha }}
           JIO_API_KEY: ${{ secrets.JIO_API_KEY }}

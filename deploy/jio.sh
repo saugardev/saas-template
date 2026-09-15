@@ -353,10 +353,9 @@ remote_script="${remote_script//__LANDING_B64__/$landing_b64}"
 remote_script="${remote_script//__DOCS_B64__/$docs_b64}"
 remote_script="${remote_script//__NGINX_B64__/$nginx_b64}"
 remote_script="${remote_script//__VM_ID__/${vm_id:0:12}}"
-remote_b64="$(printf '%s' "$remote_script" | base64_one_line)"
 
 echo "Deploying $git_repo ($git_ref) to $vm_id..." >&2
-"$jio_bin" exec "$vm_id" "printf '%s' '$remote_b64' | base64 -d | bash" --timeout 3600 >&2
+printf '%s\n' "$remote_script" | "$jio_bin" connect "$vm_id" >&2
 
 wait_public() {
   local name="$1" url="$2" code
