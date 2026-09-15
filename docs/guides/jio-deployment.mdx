@@ -3,7 +3,7 @@ title: Deploy on Jio
 description: Build on a persistent 4-vCPU VM and print its public URL.
 ---
 
-Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, fetches the requested Git revision, reuses the VM's Docker, Cargo, and Bun build caches, restarts every service, and checks the public endpoints.
+Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, fetches the requested Git revision, installs Rust, PostgreSQL, and nginx once, reuses native Cargo and Bun caches, restarts the systemd services, and checks the public endpoints. It does not use Docker or publish an image.
 
 ```bash
 ./deploy/jio.sh
@@ -28,9 +28,9 @@ The script uses the current Git branch and its `origin` remote. Override either 
 GIT_REPO=https://github.com/you/project.git GIT_REF=feature ./deploy/jio.sh
 ```
 
-Pushes to `main` run the included GitHub Actions workflow. GitHub only selects the persistent VM and invokes this script; the VM fetches the exact commit, compiles it locally, applies pending SQLx migrations when the API starts, and restarts the services. No deployment image is published. Configure repository secrets `JIO_API_KEY` and `JIO_SSH_KEY`, plus bootstrap variables `JIO_ENDPOINT`, `JIO_VM_ID`, and `JIO_HOST_KEY`. The workflow keeps the current non-secret VM identity in the `jio-state` Git tag, recreates a deleted VM with the same deployment SSH key, and remembers its replacement automatically. A replacement VM has a cold build cache; later builds reuse it.
+Pushes to `main` run the included GitHub Actions workflow. GitHub only selects the persistent VM and invokes this script; the VM fetches the exact commit, compiles it locally, applies pending SQLx migrations when the API starts, and restarts the native services. Configure repository secrets `JIO_API_KEY` and `JIO_SSH_KEY`, plus bootstrap variables `JIO_ENDPOINT`, `JIO_VM_ID`, and `JIO_HOST_KEY`. The workflow keeps the current non-secret VM identity in the `jio-state` Git tag, recreates a deleted VM with the same deployment SSH key, and remembers its replacement automatically. A replacement VM installs its native toolchain once; later builds reuse it.
 
-The computer keeps its PostgreSQL volume and OAuth signing keys across redeployments. Destroying the computer removes that state and gives the next deployment new public URLs.
+The computer keeps its native PostgreSQL data and OAuth signing keys across redeployments. Destroying the computer removes that state and gives the next deployment new public URLs.
 
 ## Connect a client
 
