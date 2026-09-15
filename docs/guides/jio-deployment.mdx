@@ -3,7 +3,7 @@ title: Deploy on Jio
 description: Build on a persistent 4-vCPU VM and print its public URL.
 ---
 
-Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, fetches the requested Git revision, installs Rust, PostgreSQL, and nginx once, reuses native Cargo and Bun caches, restarts the systemd services, and checks the public endpoints. It does not use Docker or publish an image.
+Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, fetches the requested Git revision, installs Rust, PostgreSQL, and nginx once, and checks the public endpoints. Later deploys reuse the published URLs and native caches, then build and restart only services changed since the last successful revision. It does not use Docker or publish an image.
 
 ```bash
 ./deploy/jio.sh

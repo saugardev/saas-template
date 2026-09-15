@@ -80,10 +80,19 @@ fi
 mkdir -p "$(dirname "$vm_file")"
 printf '%s\n' "$vm_id" > "$vm_file"
 
-echo "Publishing Jio endpoints..." >&2
-app_url="$("$jio_bin" expose 8080 "$vm_id")"
-landing_url="$("$jio_bin" expose 3002 "$vm_id")"
-docs_url="$("$jio_bin" expose 3003 "$vm_id")"
+echo "Resolving Jio endpoints..." >&2
+published_ports="$("$jio_bin" ports "$vm_id")"
+resolve_endpoint() {
+  local port="$1" url
+  url="$(printf '%s\n' "$published_ports" | awk -v port="$port" '$1 == port && $2 == "published" { print $3; exit }')"
+  if [[ -z "$url" ]]; then
+    url="$("$jio_bin" expose "$port" "$vm_id")"
+  fi
+  printf '%s\n' "$url"
+}
+app_url="$(resolve_endpoint 8080)"
+landing_url="$(resolve_endpoint 3002)"
+docs_url="$(resolve_endpoint 3003)"
 for url in "$app_url" "$landing_url" "$docs_url"; do
   [[ "$url" == https://* ]] || die "Jio returned an invalid public URL: $url"
 done
@@ -161,6 +170,7 @@ cargo_home=$state_dir/cargo
 rustup_home=$state_dir/rustup
 target_dir=$state_dir/target
 secrets_dir=$state_dir/secrets
+deployed_revision_file=$state_dir/deployed-revision
 deploy_user="$(id -un)"
 deploy_group="$(id -gn)"
 
@@ -176,9 +186,47 @@ if [[ ! -d "$repo_dir/.git" ]]; then
   [[ ! -e "$repo_dir" ]] || { echo "$repo_dir exists but is not a Git checkout" >&2; exit 1; }
   git clone --depth 1 --no-checkout "$repo_url" "$repo_dir"
 fi
+previous_revision=""
+if [[ -s "$deployed_revision_file" ]]; then
+  IFS= read -r previous_revision < "$deployed_revision_file"
+elif sudo -n systemctl is-active --quiet saas-api 2>/dev/null; then
+  previous_revision="$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || true)"
+fi
+if [[ -n "$previous_revision" ]] && git -C "$repo_dir" cat-file -e "$previous_revision^{commit}" 2>/dev/null; then
+  full_deploy=false
+else
+  previous_revision=""
+  full_deploy=true
+fi
 git -C "$repo_dir" remote set-url origin "$repo_url"
 git -C "$repo_dir" fetch --depth 1 origin "$git_ref"
 git -C "$repo_dir" checkout --force --detach FETCH_HEAD
+revision="$(git -C "$repo_dir" rev-parse HEAD)"
+
+changed() {
+  [[ "$full_deploy" == true ]] ||
+    ! git -C "$repo_dir" diff --quiet "$previous_revision" "$revision" -- "$@"
+}
+
+api_changed=false
+mcp_changed=false
+app_changed=false
+landing_changed=false
+docs_changed=false
+runtime_changed=false
+changed Cargo.toml Cargo.lock rust-toolchain rust-toolchain.toml .cargo crates/auth crates/db services/api && api_changed=true
+changed Cargo.toml Cargo.lock rust-toolchain rust-toolchain.toml .cargo crates/auth crates/mcp services/mcp && mcp_changed=true
+changed package.json bun.lock apps/app && app_changed=true
+changed package.json bun.lock apps/landing && landing_changed=true
+changed package.json bun.lock apps/docs docs && docs_changed=true
+changed deploy && runtime_changed=true
+[[ -x "$target_dir/release/starter-api" ]] || api_changed=true
+[[ -x "$target_dir/release/starter-mcp-server" ]] || mcp_changed=true
+[[ -f "$repo_dir/apps/app/.next/BUILD_ID" ]] || app_changed=true
+[[ -f "$repo_dir/apps/landing/.next/BUILD_ID" ]] || landing_changed=true
+[[ -f "$repo_dir/apps/docs/.next/BUILD_ID" ]] || docs_changed=true
+printf 'Deploy plan: api=%s mcp=%s app=%s landing=%s docs=%s runtime=%s\n' \
+  "$api_changed" "$mcp_changed" "$app_changed" "$landing_changed" "$docs_changed" "$runtime_changed"
 
 umask 077
 if [[ -f "$state_dir/postgres.env" ]]; then
@@ -225,10 +273,16 @@ else
   rustup default 1.94.0
 fi
 
-echo "Building Rust services..."
-cargo build --locked --release -p starter-api -p starter-mcp-server --manifest-path "$repo_dir/Cargo.toml"
+rust_packages=()
+if [[ "$api_changed" == true ]]; then rust_packages+=(-p starter-api); fi
+if [[ "$mcp_changed" == true ]]; then rust_packages+=(-p starter-mcp-server); fi
+if (( ${#rust_packages[@]} )); then
+  echo "Building changed Rust services..."
+  cargo build --locked --release "${rust_packages[@]}" --manifest-path "$repo_dir/Cargo.toml"
+else
+  echo "Rust services unchanged; skipping build."
+fi
 
-echo "Building web apps..."
 export APP_URL="$app_url"
 export LANDING_URL="$landing_url"
 export DOCS_URL="$docs_url"
@@ -237,8 +291,15 @@ export API_INTERNAL_URL=http://127.0.0.1:4000
 export NEXT_TELEMETRY_DISABLED=1
 touch "$repo_dir/.env"
 cd "$repo_dir"
-bun install --frozen-lockfile
-bun run build
+if [[ "$app_changed" == true || "$landing_changed" == true || "$docs_changed" == true ]]; then
+  echo "Building changed web apps..."
+  bun install --frozen-lockfile
+  if [[ "$app_changed" == true ]]; then bun run build:app; fi
+  if [[ "$landing_changed" == true ]]; then bun run build:landing; fi
+  if [[ "$docs_changed" == true ]]; then bun run build:docs; fi
+else
+  echo "Web apps unchanged; skipping build."
+fi
 
 if ! command -v psql >/dev/null; then
   echo "Installing PostgreSQL..."
@@ -329,19 +390,25 @@ done
 sudo -n systemctl daemon-reload
 sudo -n systemctl enable saas-api saas-mcp saas-app saas-landing saas-docs nginx >/dev/null
 
-echo "Starting API and applying embedded database migrations..."
-sudo -n systemctl restart saas-api
+if [[ "$api_changed" == true || "$runtime_changed" == true ]]; then
+  echo "Restarting API and applying embedded database migrations..."
+  sudo -n systemctl restart saas-api
+  wait_http saas-api http://127.0.0.1:4000/readyz
+fi
+if [[ "$mcp_changed" == true || "$runtime_changed" == true ]]; then sudo -n systemctl restart saas-mcp; fi
+if [[ "$app_changed" == true || "$runtime_changed" == true ]]; then sudo -n systemctl restart saas-app; fi
+if [[ "$landing_changed" == true || "$runtime_changed" == true ]]; then sudo -n systemctl restart saas-landing; fi
+if [[ "$docs_changed" == true || "$runtime_changed" == true ]]; then sudo -n systemctl restart saas-docs; fi
+if [[ "$runtime_changed" == true ]]; then sudo -n systemctl restart nginx; fi
 wait_http saas-api http://127.0.0.1:4000/readyz
-sudo -n systemctl restart saas-mcp saas-app saas-landing saas-docs
 wait_http saas-mcp http://127.0.0.1:4001/healthz
 wait_http saas-app http://127.0.0.1:3000/login
 wait_http saas-landing http://127.0.0.1:3002/
 wait_http saas-docs http://127.0.0.1:3003/
-sudo -n systemctl restart nginx
 wait_http nginx http://127.0.0.1:8080/login
 
-revision="$(git -C "$repo_dir" rev-parse --short=12 HEAD)"
-echo "Deployed $revision"
+printf '%s\n' "$revision" > "$deployed_revision_file"
+echo "Deployed ${revision:0:12}"
 sudo -n systemctl --no-pager --plain --type=service --state=running \
   | awk '$1 ~ /^(nginx|postgresql|saas-)/ { print $1 }'
 REMOTE
