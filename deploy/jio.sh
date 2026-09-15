@@ -14,7 +14,6 @@ Environment:
   JIO_VM_FILE  Remembered VM path (default: .local/jio-vm)
   GIT_REPO     Repository URL visible from the VM (default: origin)
   GIT_REF      Branch or tag to deploy (default: current branch)
-  DEPLOY_IMAGE Prebuilt image to pull instead of building on the VM
 EOF
 }
 
@@ -126,8 +125,6 @@ ref_b64="$(printf '%s' "$git_ref" | base64_one_line)"
 app_b64="$(printf '%s' "$app_url" | base64_one_line)"
 landing_b64="$(printf '%s' "$landing_url" | base64_one_line)"
 docs_b64="$(printf '%s' "$docs_url" | base64_one_line)"
-image_b64="$(printf '%s' "${DEPLOY_IMAGE:-}" | base64_one_line)"
-
 read -r -d '' remote_script <<'REMOTE' || true
 set -Eeuo pipefail
 
@@ -149,7 +146,6 @@ git_ref="$(decode '__REF_B64__')"
 app_url="$(decode '__APP_B64__')"
 landing_url="$(decode '__LANDING_B64__')"
 docs_url="$(decode '__DOCS_B64__')"
-prebuilt_image="$(decode '__IMAGE_B64__')"
 repo_dir=/workspace/saas-template
 
 command -v git >/dev/null
@@ -157,17 +153,17 @@ command -v curl >/dev/null
 command -v openssl >/dev/null
 docker info >/dev/null
 
-if [[ -d "$repo_dir/.git" ]]; then
-  [[ -z "$(git -C "$repo_dir" status --porcelain --untracked-files=no)" ]] || {
-    echo "tracked changes exist in $repo_dir; refusing to overwrite them" >&2
-    exit 1
-  }
-  git -C "$repo_dir" remote set-url origin "$repo_url"
-  git -C "$repo_dir" fetch --depth 1 origin "$git_ref"
-  git -C "$repo_dir" checkout --detach FETCH_HEAD
-else
-  git clone --depth 1 --branch "$git_ref" "$repo_url" "$repo_dir"
+if [[ ! -d "$repo_dir/.git" ]]; then
+  [[ ! -e "$repo_dir" ]] || { echo "$repo_dir exists but is not a Git checkout" >&2; exit 1; }
+  git clone --depth 1 --no-checkout "$repo_url" "$repo_dir"
 fi
+[[ -z "$(git -C "$repo_dir" status --porcelain --untracked-files=no)" ]] || {
+  echo "tracked changes exist in $repo_dir; refusing to overwrite them" >&2
+  exit 1
+}
+git -C "$repo_dir" remote set-url origin "$repo_url"
+git -C "$repo_dir" fetch --depth 1 origin "$git_ref"
+git -C "$repo_dir" checkout --detach FETCH_HEAD
 
 decode '__NGINX_B64__' > /workspace/saas-nginx.conf
 
@@ -199,18 +195,13 @@ chmod 600 /workspace/saas.env /workspace/postgres.env "$private_key"
 chmod 644 /workspace/saas-nginx.conf "$public_key"
 
 revision="$(git -C "$repo_dir" rev-parse --short=12 HEAD)"
-if [[ -n "$prebuilt_image" ]]; then
-  image="$prebuilt_image"
-  docker pull "$image"
-else
-  image="saas-template:$revision"
-  docker build --progress=plain -f "$repo_dir/deploy/Dockerfile" -t "$image" \
-    --build-arg "APP_URL=$app_url" \
-    --build-arg "LANDING_URL=$landing_url" \
-    --build-arg "DOCS_URL=$docs_url" \
-    --build-arg "API_PUBLIC_URL=$app_url" \
-    "$repo_dir"
-fi
+image="saas-template:$revision"
+docker build --progress=plain -f "$repo_dir/deploy/Dockerfile" -t "$image" \
+  --build-arg "APP_URL=$app_url" \
+  --build-arg "LANDING_URL=$landing_url" \
+  --build-arg "DOCS_URL=$docs_url" \
+  --build-arg "API_PUBLIC_URL=$app_url" \
+  "$repo_dir"
 
 for container in saas-proxy saas-docs saas-landing saas-app saas-mcp saas-api saas-db; do
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -227,6 +218,7 @@ for _ in $(seq 1 60); do
 done
 docker exec saas-db pg_isready -U saas -d saas_template >/dev/null
 
+echo "Starting API and applying embedded database migrations..."
 docker run -d --name saas-api --restart unless-stopped --network host \
   --env-file /workspace/saas.env \
   -v /workspace/saas-secrets:/run/secrets:ro \
@@ -266,7 +258,6 @@ remote_script="${remote_script//__REF_B64__/$ref_b64}"
 remote_script="${remote_script//__APP_B64__/$app_b64}"
 remote_script="${remote_script//__LANDING_B64__/$landing_b64}"
 remote_script="${remote_script//__DOCS_B64__/$docs_b64}"
-remote_script="${remote_script//__IMAGE_B64__/$image_b64}"
 remote_script="${remote_script//__NGINX_B64__/$nginx_b64}"
 remote_script="${remote_script//__VM_ID__/${vm_id:0:12}}"
 remote_b64="$(printf '%s' "$remote_script" | base64_one_line)"

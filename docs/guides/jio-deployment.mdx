@@ -1,9 +1,9 @@
 ---
 title: Deploy on Jio
-description: Create a fresh 4-vCPU deployment and print its public URL.
+description: Build on a persistent 4-vCPU VM and print its public URL.
 ---
 
-Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, reuses its Docker build cache on later runs, starts every service, and checks the public endpoints.
+Choose **Large (4 vCPU, 8 GiB)** in `jio config`. The deployment script remembers its VM in `.local/jio-vm`, fetches the requested Git revision, reuses the VM's Docker, Cargo, and Bun build caches, restarts every service, and checks the public endpoints.
 
 ```bash
 ./deploy/jio.sh
@@ -28,13 +28,7 @@ The script uses the current Git branch and its `origin` remote. Override either 
 GIT_REPO=https://github.com/you/project.git GIT_REF=feature ./deploy/jio.sh
 ```
 
-Set `DEPLOY_IMAGE` to skip compilation on the VM and pull an existing image:
-
-```bash
-DEPLOY_IMAGE=ghcr.io/you/project:sha ./deploy/jio.sh
-```
-
-Pushes to `main` run the included GitHub Actions workflow. It builds the image with GitHub's layer cache, pushes it to GHCR, then deploys it to the same VM. Configure repository secrets `JIO_API_KEY` and `JIO_SSH_KEY`, plus bootstrap variables `JIO_ENDPOINT`, `JIO_VM_ID`, and `JIO_HOST_KEY`. The workflow keeps the current non-secret VM identity in the `jio-state` Git tag, recreates a deleted VM with the same deployment SSH key, and remembers its replacement automatically.
+Pushes to `main` run the included GitHub Actions workflow. GitHub only selects the persistent VM and invokes this script; the VM fetches the exact commit, compiles it locally, applies pending SQLx migrations when the API starts, and restarts the services. No deployment image is published. Configure repository secrets `JIO_API_KEY` and `JIO_SSH_KEY`, plus bootstrap variables `JIO_ENDPOINT`, `JIO_VM_ID`, and `JIO_HOST_KEY`. The workflow keeps the current non-secret VM identity in the `jio-state` Git tag, recreates a deleted VM with the same deployment SSH key, and remembers its replacement automatically. A replacement VM has a cold build cache; later builds reuse it.
 
 The computer keeps its PostgreSQL volume and OAuth signing keys across redeployments. Destroying the computer removes that state and gives the next deployment new public URLs.
 
