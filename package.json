@@ -22,6 +22,7 @@
     "check": "bun run test:web && bun run lint && bun run types:check && bun run build && bun run check:rust",
     "keys:dev": "./scripts/generate-dev-key.sh",
     "test:auth": "bun scripts/check-auth.ts",
-    "test:web": "bun test scripts/redirect.test.ts"
+    "test:web": "bun test scripts/redirect.test.ts",
+    "test:deploy": "bun test scripts/jio-deploy.test.ts"
   }
 }

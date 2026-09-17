@@ -58,13 +58,12 @@ jobs:
             session_dir="$JIO_STATE_DIR/sessions/$vm_id"
             install -d -m 700 "$session_dir"
             printf '%s\n' "$JIO_SSH_KEY" > "$session_dir/id_ed25519"
-            printf 'jio-%s %s\n' "$vm_id" "$CONFIGURED_HOST_KEY" > "$session_dir/known_hosts"
+            # Restarts rotate the host key. Let Jio pin the current key from its
+            # authenticated API instead of restoring an obsolete key from the tag.
+            ssh-keygen -y -f "$session_dir/id_ed25519" > "$session_dir/id_ed25519.pub"
             printf 'large\n' > "$session_dir/requested-size"
             printf '%s' "$vm_id" > "$JIO_STATE_DIR/current-session"
-            if ! jio exec "$vm_id" true --timeout 15 >/dev/null 2>&1; then
-              jio start "$vm_id" >/dev/null
-              jio exec "$vm_id" true --timeout 15 >/dev/null
-            fi
+            bash deploy/ensure-ready.sh "$vm_id"
           else
             unmanaged_vm="$(jio list | awk 'length($1) == 32 && $1 ~ /^[0-9a-f]+$/ { print $1; exit }')"
             [[ -z "$unmanaged_vm" ]] || { echo "Jio account contains unmanaged VM $unmanaged_vm" >&2; exit 1; }

@@ -80,6 +80,8 @@ fi
 mkdir -p "$(dirname "$vm_file")"
 printf '%s\n' "$vm_id" > "$vm_file"
 
+JIO_BIN="$jio_bin" bash "$project_root/deploy/ensure-ready.sh" "$vm_id"
+
 echo "Resolving Jio endpoints..." >&2
 published_ports="$("$jio_bin" ports "$vm_id")"
 resolve_endpoint() {
